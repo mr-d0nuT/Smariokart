@@ -61,38 +61,204 @@ const FaceDriver = (() => {
     }
   }
 
-  /* Dibuja la gorra o accesorio temático adaptado al tamaño gigante de la cabeza */
-  function drawBigHeadCap(fctx, hx, hy, tilt, scaleX, theme, characterIndex, isRearView, headW, headH) {
+  // Ángulos de rotación 3D para los 12 cuadros de conducción del kart
+  // 0: Vista trasera directa (0 rad)
+  // 1-4: Giro hacia la derecha visto desde atrás
+  // 5-7: Transición y perfil lateral (π/2 rad)
+  // 8-10: Giro frontal hacia la cámara
+  // 11: Vista frontal directa encarando la cámara (π rad)
+  const FRAME_ANGLES = [0, 0.31, 0.63, 0.96, 1.26, 1.40, 1.50, Math.PI / 2, 2.01, 2.41, 2.79, Math.PI];
+
+  function getCanvasPixelData(c) {
+    if (!c) return null;
+    const w = c.width || 256, h = c.height || 256;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    return {
+      data: ctx.getImageData(0, 0, w, h).data,
+      w, h
+    };
+  }
+
+  function sampleTexture(tex, u, v) {
+    if (!tex || !tex.data) return { r: 180, g: 150, b: 120, a: 255 };
+    const su = Math.max(0, Math.min(1, u));
+    const sv = Math.max(0, Math.min(1, v));
+    const px = Math.min(tex.w - 1, Math.floor(su * tex.w));
+    const py = Math.min(tex.h - 1, Math.floor(sv * tex.h));
+    const idx = (py * tex.w + px) * 4;
+    return {
+      r: tex.data[idx],
+      g: tex.data[idx + 1],
+      b: tex.data[idx + 2],
+      a: tex.data[idx + 3]
+    };
+  }
+
+  /* Proyecta las fotos como textura sobre la forma 3D de la cabeza (elipsoide/esfera),
+   * adaptándose a la curvatura esférica, la rotación 3D en el ángulo alpha, el sombreado
+   * volumétrico de luz y el oscurecimiento de bordes estilo Super Nintendo. */
+  function render3DTexturedHead(alpha, headW, headH, frontCanvas, backCanvas) {
+    const pad = 6;
+    const outW = headW + pad * 2;
+    const outH = headH + pad * 2;
+    const c = document.createElement('canvas');
+    c.width = outW;
+    c.height = outH;
+    const ctx = c.getContext('2d');
+    const imgData = ctx.createImageData(outW, outH);
+    const out = imgData.data;
+
+    const frontTex = getCanvasPixelData(frontCanvas);
+    const backTex = getCanvasPixelData(backCanvas || frontCanvas);
+
+    const Rx = headW / 2;
+    const Ry = headH / 2;
+    const cx = Math.round(outW / 2);
+    const cy = Math.round(outH / 2);
+
+    const cosA = Math.cos(alpha);
+    const sinA = Math.sin(alpha);
+
+    // Vector de luz direccional (arriba-frente-izquierda)
+    const Lx = -0.37, Ly = -0.62, Lz = 0.69;
+
+    for (let dy = -Ry; dy <= Ry; dy++) {
+      const ny = dy / Ry;
+      const ny2 = ny * ny;
+      if (ny2 >= 1.0) continue;
+      const maxDx = Math.round(Rx * Math.sqrt(1 - ny2));
+      const rowOffset = (cy + dy) * outW;
+
+      for (let dx = -maxDx; dx <= maxDx; dx++) {
+        const nx = dx / Rx;
+        const d2 = nx * nx + ny2;
+        if (d2 >= 1.0) continue;
+
+        // Coordenada Z de la superficie esférica 3D (profundidad hacia la pantalla)
+        const z = Math.sqrt(1.0 - d2);
+
+        // Rotación 3D del vector normal/superficie respecto al eje vertical de la cabeza
+        const Xhead = nx * cosA + z * sinA;
+        const Zhead = -nx * sinA + z * cosA;
+
+        // Coordenadas esféricas de la textura (longitud y latitud sobre la cabeza)
+        const angleH = Math.atan2(Xhead, Math.abs(Zhead)); // [-PI/2, PI/2]
+        const uNorm = 0.5 + (angleH / Math.PI) * 1.05;
+        const vNorm = 0.5 + (ny * 0.48);
+
+        // Muestrear textura frontal o trasera con zona de transición suave en las sienes/orejas
+        let r = 0, g = 0, b = 0, a = 255;
+        const blendDist = 0.18;
+
+        if (Zhead < -blendDist) {
+          // Vista frontal directa o ángulo delantero
+          const col = sampleTexture(frontTex, uNorm, vNorm);
+          r = col.r; g = col.g; b = col.b; a = col.a;
+        } else if (Zhead > blendDist) {
+          // Vista trasera o nuca
+          const col = sampleTexture(backTex, uNorm, vNorm);
+          r = col.r; g = col.g; b = col.b; a = col.a;
+        } else {
+          // Mezcla suave en el lateral/perfil de la cabeza (360° continuo)
+          const fCol = sampleTexture(frontTex, uNorm, vNorm);
+          const bCol = sampleTexture(backTex, uNorm, vNorm);
+          const t = (Zhead + blendDist) / (2 * blendDist); // 0 = frontal, 1 = trasera
+          r = (1 - t) * fCol.r + t * bCol.r;
+          g = (1 - t) * fCol.g + t * bCol.g;
+          b = (1 - t) * fCol.b + t * bCol.b;
+          a = Math.max(fCol.a, bCol.a);
+        }
+
+        if (a < 10) continue;
+
+        // Sombreado 3D volumétrico:
+        // Iluminación difusa (Lambertiana) + luz ambiental
+        const NdotL = Math.max(0, nx * Lx + ny * Ly + z * Lz);
+        const ambient = 0.74;
+        const diffuse = 0.32 * NdotL;
+        // Oscurecimiento de borde (Limb darkening / Fresnel) para realzar el volumen esférico 3D
+        const rim = 0.52 + 0.48 * Math.pow(z, 0.42);
+        // Sombra suave proyectada por la gorra/visera en la frente y coronilla
+        const capShadow = (ny < -0.22) ? Math.max(0.72, 1.0 - 0.28 * Math.min(1, (-ny - 0.22) / 0.25)) : 1.0;
+
+        const light = (ambient + diffuse) * rim * capShadow;
+
+        // Borde exterior con contorno de cómic retro (estilo SNES)
+        const edgeFactor = 1.0 - d2;
+        let outR = Math.min(255, Math.round(r * light));
+        let outG = Math.min(255, Math.round(g * light));
+        let outB = Math.min(255, Math.round(b * light));
+
+        if (edgeFactor < 0.08) {
+          const edgeT = edgeFactor / 0.08;
+          outR = Math.round(outR * edgeT + 20 * (1 - edgeT));
+          outG = Math.round(outG * edgeT + 12 * (1 - edgeT));
+          outB = Math.round(outB * edgeT + 8 * (1 - edgeT));
+        }
+
+        const pIdx = (rowOffset + (cx + dx)) * 4;
+        out[pIdx] = outR;
+        out[pIdx + 1] = outG;
+        out[pIdx + 2] = outB;
+        out[pIdx + 3] = a;
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return c;
+  }
+
+  /* Dibuja la gorra o accesorio temático adaptado al ángulo 3D y tamaño de la cabeza */
+  function drawBigHeadCap(fctx, hx, hy, tilt, alpha, theme, characterIndex, headW, headH) {
     fctx.save();
     // Situamos la gorra en la parte superior de la frente/coronilla
     fctx.translate(hx, hy - headH * 0.38);
     fctx.rotate(tilt * 0.85);
-    fctx.scale(scaleX, 1);
 
     const capW = headW * 0.94;
     const capH = 26;
 
     if (characterIndex === 0 || characterIndex === 4) {
-      // Mario (0) o Luigi (4): Gorra de béisbol con visera y emblema
-      // Cúpula abombada
+      // Mario (0) o Luigi (4): Gorra de béisbol con visera y emblema adaptada al ángulo 3D
+      const isRear = alpha < 1.35;
+      const isProfile = alpha >= 1.35 && alpha <= 1.85;
+
+      // Cúpula abombada de la gorra
       fctx.fillStyle = theme.capColor;
       fctx.beginPath();
-      fctx.ellipse(0, -6, capW / 2, capH * 0.75, 0, Math.PI, Math.PI * 2);
+      fctx.ellipse(0, -7, capW / 2, capH * 0.75, 0, Math.PI, Math.PI * 2);
       fctx.fill();
 
-      // Sombra/borde de visera
+      // Banda base
       fctx.fillStyle = theme.capDark;
       fctx.beginPath();
-      fctx.ellipse(0, -2, capW * 0.48, 6, 0, 0, Math.PI * 2);
+      fctx.ellipse(0, -3, capW * 0.48, 6, 0, 0, Math.PI * 2);
       fctx.fill();
 
-      fctx.fillStyle = theme.capColor;
-      fctx.beginPath();
-      fctx.ellipse(0, -4, capW * 0.46, 5, 0, 0, Math.PI * 2);
-      fctx.fill();
+      if (isRear) {
+        // Vista trasera: ajuste de la gorra
+        fctx.fillStyle = '#111111';
+        fctx.beginPath();
+        fctx.ellipse(0, 0, 11, 5, 0, 0, Math.PI);
+        fctx.fill();
+        fctx.fillStyle = theme.capDark;
+        fctx.fillRect(-10, -2, 20, 3);
+      } else if (isProfile) {
+        // Vista de perfil/lateral: la visera sobresale hacia el lateral en 3D
+        fctx.fillStyle = theme.capColor;
+        fctx.beginPath();
+        fctx.ellipse(capW * 0.22, -2, capW * 0.36, 7, 0.15, 0, Math.PI * 2);
+        fctx.fill();
+        fctx.fillStyle = theme.capDark;
+        fctx.fillRect(0, 0, capW * 0.3, 3);
+      } else {
+        // Vista frontal: visera curvada hacia adelante con emblema
+        fctx.fillStyle = theme.capColor;
+        fctx.beginPath();
+        fctx.ellipse(0, -3, capW * 0.46, 7, 0, 0, Math.PI * 2);
+        fctx.fill();
 
-      if (!isRearView) {
-        // Vista frontal/tres cuartos: círculo blanco y letra 'M' o 'L'
+        // Parche blanco circular y letra M o L
         fctx.fillStyle = '#ffffff';
         fctx.beginPath();
         fctx.arc(0, -12, 10, 0, Math.PI * 2);
@@ -103,14 +269,6 @@ const FaceDriver = (() => {
         fctx.textAlign = 'center';
         fctx.textBaseline = 'middle';
         fctx.fillText(theme.emblem, 0, -11);
-      } else {
-        // Vista trasera: el arco de ajuste elástico trasero de la gorra
-        fctx.fillStyle = '#111111';
-        fctx.beginPath();
-        fctx.ellipse(0, 0, 11, 6, 0, 0, Math.PI);
-        fctx.fill();
-        fctx.fillStyle = theme.capDark;
-        fctx.fillRect(-10, -2, 20, 3);
       }
     } else if (characterIndex === 1) {
       // Princesa Peach: Corona dorada con joyas
@@ -182,7 +340,7 @@ const FaceDriver = (() => {
     fctx.restore();
   }
 
-  /* Genera los 12 cuadros de conducción del kart en ALTA CALIDAD con cabeza grande exagerada */
+  /* Genera los 12 cuadros de conducción del kart con la textura fotográfica adaptada a la forma 3D */
   function buildDrivingFrames(characterIndex) {
     const ch = CHARACTERS[characterIndex];
     const rawSheet = Assets.img(ch.file.replace('drivers/', ''));
@@ -210,21 +368,18 @@ const FaceDriver = (() => {
       fctx.drawImage(origSlice, 0, 0, 32, 32, 0, 0, SPRITE_SIZE, SPRITE_SIZE);
 
       // 2. Anclaje de la cabeza grande y ángulo según el fotograma
-      // Fotogramas 0-4: Trasera (conducción hacia adelante en carrera)
-      // Fotogramas 5-7: Perfil / lateral
-      // Fotogramas 8-11: Frontal (trompo, podio, menú de selección)
       let hx = 64, hy = 44, tilt = 0, scaleX = 1;
-      const isRearView = (f >= 0 && f <= 4);
+      const alpha = FRAME_ANGLES[f];
 
       if (f === 0) { hx = 64; hy = 44; tilt = 0; }
       else if (f === 1) { hx = 67; hy = 45; tilt = 0.08; scaleX = 0.98; }
       else if (f === 2) { hx = 70; hy = 46; tilt = 0.16; scaleX = 0.96; }
       else if (f === 3) { hx = 74; hy = 47; tilt = 0.24; scaleX = 0.94; }
       else if (f === 4) { hx = 78; hy = 48; tilt = 0.32; scaleX = 0.92; } // derrape
-      else if (f === 5) { hx = 76; hy = 47; tilt = 0.18; scaleX = 0.88; }
-      else if (f === 6) { hx = 78; hy = 48; tilt = 0.10; scaleX = 0.82; }
-      else if (f === 7) { hx = 80; hy = 49; tilt = 0; scaleX = 0.76; }    // lateral
-      else if (f === 8) { hx = 75; hy = 48; tilt = -0.16; scaleX = 0.88; }
+      else if (f === 5) { hx = 76; hy = 47; tilt = 0.18; scaleX = 0.90; }
+      else if (f === 6) { hx = 78; hy = 48; tilt = 0.10; scaleX = 0.86; }
+      else if (f === 7) { hx = 80; hy = 49; tilt = 0; scaleX = 0.82; }    // lateral/perfil
+      else if (f === 8) { hx = 75; hy = 48; tilt = -0.16; scaleX = 0.90; }
       else if (f === 9) { hx = 71; hy = 46; tilt = -0.10; scaleX = 0.94; }
       else if (f === 10) { hx = 67; hy = 45; tilt = -0.05; scaleX = 0.98; }
       else if (f === 11) { hx = 64; hy = 44; tilt = 0; }                   // frontal directo
@@ -237,54 +392,32 @@ const FaceDriver = (() => {
       fctx.clearRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
       fctx.restore();
 
-      // Elegir fuente de la foto:
-      // Si estamos en vista trasera (0-4) y el usuario se tomó la foto de la nuca/pelo, ¡la usamos!
-      // Si no tiene foto trasera, usamos la frontal para que se vea su cara en el kart
-      const faceSource = (isRearView && userBackCanvas) ? userBackCanvas : userFaceCanvas;
-
-      // 4. Dibujar la cabeza grande del usuario en MÁXIMA CALIDAD FOTOGRÁFICA
-      // Tamaño grande y exagerado ("el máximo tamaño posible, incluso un poco más grande")
+      // 4. Proyectar la foto como textura adaptada a la forma 3D de la cabeza
       const HEAD_W = 74;
       const HEAD_H = 80;
+
+      const head3D = render3DTexturedHead(alpha, HEAD_W, HEAD_H, userFaceCanvas, userBackCanvas);
 
       fctx.save();
       fctx.translate(hx, hy);
       fctx.rotate(tilt);
       fctx.scale(scaleX, 1);
 
-      // Sombra suave bajo la cabeza para integrarla sobre el kart
-      fctx.save();
+      // Sombra suave bajo la cabeza para integrarla sobre el chasis del kart
       fctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       fctx.beginPath();
       fctx.ellipse(0, HEAD_H / 2 - 2, HEAD_W * 0.46, 12, 0, 0, Math.PI * 2);
       fctx.fill();
-      fctx.restore();
 
-      // Recorte ovalado limpio con antialiasing
-      fctx.save();
-      fctx.beginPath();
-      fctx.ellipse(0, 0, HEAD_W * 0.48, HEAD_H * 0.49, 0, 0, Math.PI * 2);
-      fctx.clip();
-
-      // Dibujar la foto en alta resolución con suavizado de máxima calidad (SIN PIXELAR / SIN CUADRICULAR)
+      // Dibujar la cabeza 3D con calidad fotográfica suavizada
       fctx.imageSmoothingEnabled = true;
       fctx.imageSmoothingQuality = 'high';
-      fctx.drawImage(faceSource, -HEAD_W / 2, -HEAD_H / 2, HEAD_W, HEAD_H);
+      fctx.drawImage(head3D, -head3D.width / 2, -head3D.height / 2);
+
       fctx.restore();
 
-      // Contorno exterior fino y definido para separar la cabeza del fondo del circuito
-      fctx.save();
-      fctx.strokeStyle = 'rgba(10, 5, 0, 0.85)';
-      fctx.lineWidth = 2.5;
-      fctx.beginPath();
-      fctx.ellipse(0, 0, HEAD_W * 0.48, HEAD_H * 0.49, 0, 0, Math.PI * 2);
-      fctx.stroke();
-      fctx.restore();
-
-      fctx.restore(); // Restaura transform de la cabeza
-
-      // 5. Dibujar la gorra / accesorios del personaje encima de la cabeza grande
-      drawBigHeadCap(fctx, hx, hy, tilt, scaleX, theme, characterIndex, isRearView, HEAD_W, HEAD_H);
+      // 5. Dibujar la gorra / accesorios 3D del personaje
+      drawBigHeadCap(fctx, hx, hy, tilt, alpha, theme, characterIndex, HEAD_W, HEAD_H);
 
       frames.push(frameCanvas);
     }
@@ -309,10 +442,11 @@ const FaceDriver = (() => {
     ctx.fillStyle = '#000000';
     ctx.beginPath(); ctx.arc(24, 24, 20, 0, Math.PI * 2); ctx.fill();
 
-    // Cara en alta calidad
+    // Cara 3D en alta calidad
+    const head3D = render3DTexturedHead(Math.PI, 36, 38, userFaceCanvas, userBackCanvas);
     ctx.save();
     ctx.beginPath(); ctx.arc(24, 25, 18, 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(userFaceCanvas, 5, 6, 38, 38);
+    ctx.drawImage(head3D, 24 - head3D.width / 2, 25 - head3D.height / 2);
     ctx.restore();
 
     // Mini gorra superior
@@ -340,10 +474,11 @@ const FaceDriver = (() => {
     ctx.fillStyle = '#000000';
     ctx.beginPath(); ctx.arc(64, 64, 56, 0, Math.PI * 2); ctx.fill();
 
-    // Cara en alta resolución
+    // Cara 3D en alta resolución
+    const head3D = render3DTexturedHead(Math.PI, 92, 96, userFaceCanvas, userBackCanvas);
     ctx.save();
     ctx.beginPath(); ctx.arc(64, 66, 52, 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(userFaceCanvas, 10, 12, 108, 108);
+    ctx.drawImage(head3D, 64 - head3D.width / 2, 66 - head3D.height / 2);
     ctx.restore();
 
     // Gran gorra de campeón

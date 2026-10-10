@@ -411,6 +411,78 @@
     background: rgba(160, 140, 30, 0.18);
   }
 
+  /* Controles de encuadre y zoom interactivo */
+  .selfie-framing-box {
+    width: 100%;
+    background: rgba(16, 24, 40, 0.92);
+    border: 2px solid #335588;
+    border-radius: 10px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  }
+  .framing-hint {
+    font-size: 11px;
+    color: #ffd700;
+    text-align: center;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+  }
+  .framing-tools-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .framing-btn {
+    background: #203050;
+    color: #fff;
+    border: 1px solid #5070a0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    white-space: nowrap;
+  }
+  .framing-btn:hover {
+    background: #304870;
+    border-color: #ffd700;
+    color: #ffd700;
+  }
+  .framing-btn.center-btn {
+    background: linear-gradient(180deg, #d88000, #985000);
+    border-color: #ffd700;
+    color: #fff;
+    margin-left: auto;
+  }
+  .framing-btn.center-btn:hover {
+    filter: brightness(1.2);
+  }
+  .zoom-slider {
+    flex: 1;
+    accent-color: #ffd700;
+    cursor: pointer;
+    height: 6px;
+  }
+  .zoom-badge {
+    font-size: 11px;
+    font-weight: bold;
+    color: #ffd700;
+    min-width: 38px;
+    text-align: right;
+    font-family: monospace;
+  }
+  .selfie-cam-box.can-drag {
+    cursor: grab;
+  }
+  .selfie-cam-box.is-dragging {
+    cursor: grabbing;
+  }
+
   .btn-row {
     display: flex;
     gap: 10px;
@@ -632,13 +704,27 @@
           </div>
         </div>
 
-        <div class="selfie-cam-box">
+        <div class="selfie-cam-box" id="selfieCamBox">
           <video id="selfieVideo" autoplay playsinline muted></video>
           <canvas id="selfieShot" width="320" height="320" style="display:none;"></canvas>
           <div class="selfie-oval"></div>
           <div id="selfieCountdown"></div>
           <div id="selfieFlash"></div>
           <div id="selfieCamMsg"></div>
+        </div>
+
+        <!-- Barra de herramientas de encuadre y zoom interactivo -->
+        <div id="selfieFramingControls" class="selfie-framing-box hidden">
+          <div class="framing-hint">
+            <span>🖐️ Arrastra la foto para encuadrar · Rueda para zoom</span>
+          </div>
+          <div class="framing-tools-row">
+            <button id="btnZoomOut" type="button" class="framing-btn" title="Reducir zoom">🔍−</button>
+            <input type="range" id="selfieZoomSlider" min="0.7" max="2.6" step="0.05" value="1.35" class="zoom-slider" title="Ajustar zoom">
+            <button id="btnZoomIn" type="button" class="framing-btn" title="Aumentar zoom">🔍+</button>
+            <span id="zoomValBadge" class="zoom-badge">135%</span>
+            <button id="btnCenterHead" type="button" class="framing-btn center-btn" title="Centrar nuca/cabeza automáticamente">🎯 Centrar</button>
+          </div>
         </div>
 
         <div id="selfieFaceStatus" class="selfie-face-status">⏳ Cargando detector de caras...</div>

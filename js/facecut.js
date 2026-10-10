@@ -113,38 +113,130 @@ const FaceCut = (() => {
     return out;
   }
 
-  // Alternativa sin detector: óvalo central con borde difuminado.
-  function ovalFallback() {
-    const W = work.width, H = work.height;
-    const side = Math.min(W, H) * 0.75;
-    const sx = (W - side) / 2, sy = (H - side) / 2;
-    const S = FACE_SIZE;
+  // Copia del lienzo de trabajo sin recortar
+  function getRawWork() {
+    const raw = document.createElement('canvas');
+    raw.width = work.width; raw.height = work.height;
+    const rctx = raw.getContext('2d');
+    rctx.drawImage(work, 0, 0);
+    return raw;
+  }
+
+  // Recorte de óvalo en cualquier coordenada (cx, cy) y zoom con máscara suave y borde cómic.
+  function cropOval(sourceCanvas, cx = 0.5, cy = 0.5, zoom = 1.0, S = FACE_SIZE) {
+    if (!sourceCanvas) return null;
+    const W = sourceCanvas.width || sourceCanvas.naturalWidth || 320;
+    const H = sourceCanvas.height || sourceCanvas.naturalHeight || 320;
+    const z = Math.max(0.4, Math.min(3.5, zoom || 1.0));
+    const side = (Math.min(W, H) * 0.82) / z;
+    const k = S / side;
+    const ox = (S / 2) - cx * W * k;
+    const oy = (S / 2) - cy * H * k;
+
     const out = document.createElement('canvas');
     out.width = out.height = S;
     const o = out.getContext('2d');
-    o.filter = 'contrast(1.15) saturate(1.3) brightness(1.05)';
-    o.drawImage(work, sx, sy, side, side, 0, 0, S, S);
+    o.imageSmoothingEnabled = true;
+    o.imageSmoothingQuality = 'high';
+    o.filter = 'contrast(1.12) saturate(1.25) brightness(1.04)';
+    o.drawImage(sourceCanvas, ox, oy, W * k, H * k);
     o.filter = 'none';
+
+    // Máscara ovalada suave
     const mask = document.createElement('canvas');
     mask.width = mask.height = S;
     const m = mask.getContext('2d');
-    m.filter = 'blur(4px)';
+    m.filter = 'blur(2.5px)';
     m.fillStyle = '#000';
-    m.beginPath(); m.ellipse(S / 2, S / 2, S * 0.34, S * 0.45, 0, 0, Math.PI * 2); m.fill();
+    m.beginPath();
+    m.ellipse(S / 2, S / 2, S * 0.35, S * 0.45, 0, 0, Math.PI * 2);
+    m.fill();
+
     o.globalCompositeOperation = 'destination-in';
     o.drawImage(mask, 0, 0);
     o.globalCompositeOperation = 'source-over';
+
+    // Borde sutil estilo cómic
+    o.strokeStyle = 'rgba(40, 20, 10, 0.55)';
+    o.lineWidth = 2.5;
+    o.beginPath();
+    o.ellipse(S / 2, S / 2, S * 0.35, S * 0.45, 0, 0, Math.PI * 2);
+    o.stroke();
+
     out._cut = 'oval';
+    out._crop = { cx, cy, zoom: z };
     return out;
   }
 
-  // Devuelve { face, detected } o null si la fuente aún no tiene imagen.
+  // Detección automática del centro de la cabeza/pelo en fotos de nuca o espalda
+  function autoDetectHeadCenter(sourceCanvas) {
+    if (!sourceCanvas) return { cx: 0.5, cy: 0.62, zoom: 1.35 };
+    try {
+      const W = sourceCanvas.width || sourceCanvas.naturalWidth || 0;
+      const H = sourceCanvas.height || sourceCanvas.naturalHeight || 0;
+      if (!W || !H) return { cx: 0.5, cy: 0.62, zoom: 1.35 };
+
+      const tw = 48, th = 48;
+      const thumb = document.createElement('canvas');
+      thumb.width = tw; thumb.height = th;
+      const tctx = thumb.getContext('2d');
+      tctx.drawImage(sourceCanvas, 0, 0, tw, th);
+      const imgData = tctx.getImageData(0, 0, tw, th);
+      const d = imgData.data;
+
+      // Estimar color del fondo (filas superiores: pared, techo, etc.)
+      let bgR = 0, bgG = 0, bgB = 0, bgCount = 0;
+      for (let y = 0; y < 6; y++) {
+        for (let x = 0; x < tw; x++) {
+          const idx = (y * tw + x) * 4;
+          bgR += d[idx]; bgG += d[idx + 1]; bgB += d[idx + 2];
+          bgCount++;
+        }
+      }
+      bgR /= bgCount; bgG /= bgCount; bgB /= bgCount;
+
+      // Centro de masas de los píxeles que difieren del fondo (pelo, cabeza, nuca)
+      let sumX = 0, sumY = 0, weightSum = 0;
+      for (let y = 0; y < th; y++) {
+        for (let x = 0; x < tw; x++) {
+          const idx = (y * tw + x) * 4;
+          const dr = d[idx] - bgR;
+          const dg = d[idx + 1] - bgG;
+          const db = d[idx + 2] - bgB;
+          const diff = Math.sqrt(dr * dr + dg * dg + db * db);
+          // Ponderar hacia el centro horizontal
+          const centerDist = Math.abs(x - tw / 2) / (tw / 2);
+          const weight = diff * (1.0 - 0.35 * centerDist);
+          sumX += x * weight;
+          sumY += y * weight;
+          weightSum += weight;
+        }
+      }
+
+      if (weightSum > 10) {
+        const detectedCx = Math.max(0.35, Math.min(0.65, (sumX / weightSum) / tw));
+        const detectedCy = Math.max(0.45, Math.min(0.75, (sumY / weightSum) / th));
+        return { cx: detectedCx, cy: detectedCy, zoom: 1.35 };
+      }
+    } catch (e) {
+      // Ignorar si el contexto no permite getImageData
+    }
+    return { cx: 0.50, cy: 0.62, zoom: 1.35 };
+  }
+
+  // Alternativa sin detector: óvalo central con borde difuminado.
+  function ovalFallback() {
+    return cropOval(work, 0.5, 0.5, 1.0, FACE_SIZE);
+  }
+
+  // Devuelve { face, raw, detected } o null si la fuente aún no tiene imagen.
   function fromSource(src, w, h, mirror, allowFallback = true) {
     if (!w || !h) return null;
     toWork(src, w, h, mirror);
+    const raw = getRawWork();
     const lms = detect();
-    if (lms) return { face: cutFromWork(lms), detected: true };
-    return allowFallback ? { face: ovalFallback(), detected: false } : null;
+    if (lms) return { face: cutFromWork(lms), raw, detected: true };
+    return allowFallback ? { face: ovalFallback(), raw, detected: false } : null;
   }
 
   return {
@@ -152,5 +244,7 @@ const FaceCut = (() => {
     get status() { return status; },
     fromVideo: (video, allowFallback) => fromSource(video, video.videoWidth, video.videoHeight, true, allowFallback),
     fromImage: (img, allowFallback) => fromSource(img, img.naturalWidth || img.width, img.naturalHeight || img.height, false, allowFallback),
+    cropOval,
+    autoDetectHeadCenter,
   };
 })();

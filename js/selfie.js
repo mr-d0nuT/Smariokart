@@ -12,6 +12,7 @@ const SelfieSetup = (() => {
   let btnPhoto, btnRetake, btnNoPhoto, btnOk, btnClose, fileInput;
   let tabFront, tabBack, badgeFront, badgeBack, thumbFront, thumbBack;
   let charGrid, nameInput, previewCanvas, pctx;
+  let camBox, framingControls, zoomSlider, zoomBadge, btnZoomIn, btnZoomOut, btnCenterHead;
 
   let stream = null;
   let camOK = false;
@@ -21,6 +22,14 @@ const SelfieSetup = (() => {
   let photoMode = 'front';          // 'front' | 'back'
   let currentFace = null;           // Foto frontal HD
   let currentBack = null;           // Foto trasera HD (nuca / pelo por detrás)
+  let rawFrontCanvas = null;        // Captura original sin recortar frontal
+  let rawBackCanvas = null;         // Captura original sin recortar trasera
+  let cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: false };
+  let cropBack = { cx: 0.5, cy: 0.62, zoom: 1.35 };
+  let isDragging = false;
+  let dragStartX = 0, dragStartY = 0;
+  let cropStartCx = 0.5, cropStartCy = 0.5;
+
   let liveFace = null;
   let liveDetected = false;
   let liveTimer = 0;
@@ -53,12 +62,60 @@ const SelfieSetup = (() => {
     previewCanvas = $('selfiePreviewCanvas');
     if (previewCanvas) pctx = previewCanvas.getContext('2d');
 
+    camBox = $('selfieCamBox') || (root ? root.querySelector('.selfie-cam-box') : null);
+    framingControls = $('selfieFramingControls');
+    zoomSlider = $('selfieZoomSlider');
+    zoomBadge = $('zoomValBadge');
+    btnZoomIn = $('btnZoomIn');
+    btnZoomOut = $('btnZoomOut');
+    btnCenterHead = $('btnCenterHead');
+
     // Event listeners
     if (btnPhoto) btnPhoto.onclick = takePhoto;
     if (btnRetake) btnRetake.onclick = retake;
     if (btnNoPhoto) btnNoPhoto.onclick = clearPhoto;
     if (btnOk) btnOk.onclick = saveAndClose;
     if (btnClose) btnClose.onclick = close;
+
+    if (zoomSlider) {
+      zoomSlider.oninput = () => applyZoom(parseFloat(zoomSlider.value));
+    }
+    if (btnZoomIn) {
+      btnZoomIn.onclick = () => {
+        const cr = getCurrentCrop();
+        applyZoom(cr.zoom + 0.1);
+      };
+    }
+    if (btnZoomOut) {
+      btnZoomOut.onclick = () => {
+        const cr = getCurrentCrop();
+        applyZoom(cr.zoom - 0.1);
+      };
+    }
+    if (btnCenterHead) {
+      btnCenterHead.onclick = () => autoCenterCurrent();
+    }
+
+    // Arrastre interactivo para encuadrar en el lienzo de foto
+    if (shot) {
+      shot.onmousedown = onDragStart;
+      shot.ontouchstart = onTouchStart;
+    }
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('mouseup', onDragEnd);
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchend', onDragEnd);
+
+    // Zoom con la rueda del ratón
+    if (camBox) {
+      camBox.onwheel = e => {
+        if (!getActiveRaw()) return;
+        e.preventDefault();
+        const cr = getCurrentCrop();
+        const delta = e.deltaY < 0 ? 0.08 : -0.08;
+        applyZoom(cr.zoom + delta);
+      };
+    }
 
     if (fileInput) {
       fileInput.onchange = () => {
@@ -68,16 +125,21 @@ const SelfieSetup = (() => {
         img.onload = async () => {
           if (FaceCut.status === 'loading') await FaceCut.load();
           const r = FaceCut.fromImage(img, true);
-          if (r && r.face) {
+          if (r && (r.face || r.raw)) {
             if (photoMode === 'front') {
+              rawFrontCanvas = r.raw;
               currentFace = r.face;
-              camMsg.textContent = '✅ ¡Foto frontal guardada en alta calidad!';
+              cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: !!r.detected };
+              camMsg.textContent = '✅ ¡Foto frontal guardada! Arrastra o usa zoom si quieres afinar.';
             } else {
-              currentBack = r.face;
-              camMsg.textContent = '✅ ¡Foto de nuca/pelo guardada en alta calidad!';
+              rawBackCanvas = r.raw;
+              const auto = FaceCut.autoDetectHeadCenter(rawBackCanvas);
+              cropBack = { cx: auto.cx, cy: auto.cy, zoom: auto.zoom };
+              currentBack = FaceCut.cropOval(rawBackCanvas, cropBack.cx, cropBack.cy, cropBack.zoom);
+              camMsg.textContent = '✅ ¡Foto de nuca encuadrada! Arrastra o usa el zoom para afinar.';
             }
           } else {
-            camMsg.textContent = 'No se pudo detectar cara en la imagen.';
+            camMsg.textContent = 'No se pudo procesar la imagen.';
           }
           URL.revokeObjectURL(img.src);
           playSfx('shutter');

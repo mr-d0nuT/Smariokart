@@ -1316,7 +1316,8 @@ class RaceState {
     const p = this.race.player;
     const input = {
       accel: Input.down('accel'), brake: Input.down('brake'),
-      left: Input.down('left'), right: Input.down('right')
+      left: Input.down('left'), right: Input.down('right'),
+      drift: Input.down('drift')
     };
     if (Input.pressed('drift') && p.canDrive()) p.shortJump();
     if (Input.pressed('itemfront') && p.canDrive() && p.powerUp !== PowerUp.NONE)
@@ -1495,7 +1496,8 @@ class BattleState {
     const p = this.race.player;
     const input = {
       accel: Input.down('accel'), brake: Input.down('brake'),
-      left: Input.down('left'), right: Input.down('right')
+      left: Input.down('left'), right: Input.down('right'),
+      drift: Input.down('drift')
     };
     if (Input.pressed('drift') && p.canDrive()) p.shortJump();
     if (Input.pressed('itemfront') && p.canDrive() && p.powerUp !== PowerUp.NONE)

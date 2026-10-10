@@ -94,6 +94,8 @@ class Driver {
     this.flightAngle = 0;
     this.height = 0; this.speedUpwards = 0;
     this.speedForward = 0; this.speedTurn = 0;
+    this.lateralSlip = 0;              // Deslizamiento lateral inercial (agarre y derrape)
+    this.isDrifting = false;
     this.vectorialSpeed = { x: 0, y: 0 };
     this.collisionMomentum = { x: 0, y: 0 };
 
@@ -202,43 +204,78 @@ class Driver {
     if (amount !== 0 && this.isRealPlayer) Sound.play('sfx_coin');
   }
 
-  /* ---------- 玩家操控 ---------- */
+  /* ---------- 玩家操控 (Física de giro y derrape realista y ultra-jugable) ---------- */
   playerControls(accel, input, now) {
     const v = this.vehicle;
     if (this.height === 0) {
       if (input.accel) accel = simulateSpeedGraph(this, accel);
       if (input.brake) accel += BRAKE_ACC;
     }
+
+    // Sensibilidad progresiva según la velocidad de avance
+    const speedRatio = Math.max(0.18, Math.min(1.0, this.speedForward / (v.maxNormalLinearSpeed * 0.45)));
+    const wantsDrift = !!((input.drift || this.pressedToDrift) && (this.speedForward > v.maxNormalLinearSpeed * 0.22));
     let drift = false;
+
     if (input.left && !input.right) {
-      let angAcc;
       if (this.pressedToDrift) {
-        this.speedTurn = -v.maxTurningAngularSpeed * 0.41;
+        this.speedTurn = -v.maxTurningAngularSpeed * 0.52;
         this.pressedToDrift = false;
       }
-      if (Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.4 &&
-          Math.abs(this.speedForward) > v.maxNormalLinearSpeed * 0.4) {
-        angAcc = v.turningAcceleration; drift = true;
-      } else angAcc = v.turningAcceleration * 0.15;
-      this.speedTurn = Math.max(this.speedTurn - angAcc, -v.maxTurningAngularSpeed);
-      if (this.speedForward > v.maxNormalLinearSpeed * 0.9)
-        accel = -v.motorAcceleration * Math.abs(this.speedTurn / v.maxTurningAngularSpeed);
+
+      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.52) {
+        drift = true;
+      }
+
+      // Dirección ágil y reactiva sin retraso artificial (eliminado el deadzone de 0.15)
+      const angAcc = drift ? (v.turningAcceleration * 2.4) : (v.turningAcceleration * 1.75 * speedRatio);
+      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.30) : (v.maxTurningAngularSpeed * 1.05)) * speedRatio;
+
+      this.speedTurn = Math.max(this.speedTurn - angAcc, -maxTurn);
+
+      // Inercia lateral de neumáticos: la inercia empuja al exterior de la curva en derrape
+      const targetSlip = drift ? -0.28 : (-0.08 * Math.abs(this.speedTurn / maxTurn));
+      this.lateralSlip += (targetSlip - this.lateralSlip) * 0.16;
+
+      // Rozamiento natural en curva fuerte (sin ahogar el motor bruscamente)
+      if (this.speedForward > v.maxNormalLinearSpeed * 0.96 && !drift) {
+        accel -= v.motorAcceleration * 0.20 * Math.abs(this.speedTurn / maxTurn);
+      }
+
       this.animator.goLeft(drift);
     } else if (input.right && !input.left) {
-      let angAcc;
       if (this.pressedToDrift) {
-        this.speedTurn = v.maxTurningAngularSpeed * 0.41;
+        this.speedTurn = v.maxTurningAngularSpeed * 0.52;
         this.pressedToDrift = false;
       }
-      if (Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.4 &&
-          Math.abs(this.speedForward) > v.maxNormalLinearSpeed * 0.4) {
-        angAcc = v.turningAcceleration; drift = true;
-      } else angAcc = v.turningAcceleration * 0.15;
-      this.speedTurn = Math.min(this.speedTurn + angAcc, v.maxTurningAngularSpeed);
-      if (this.speedForward > v.maxNormalLinearSpeed * 0.9)
-        accel = -v.motorAcceleration * Math.abs(this.speedTurn / v.maxTurningAngularSpeed);
+
+      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.52) {
+        drift = true;
+      }
+
+      // Dirección ágil y reactiva sin retraso artificial
+      const angAcc = drift ? (v.turningAcceleration * 2.4) : (v.turningAcceleration * 1.75 * speedRatio);
+      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.30) : (v.maxTurningAngularSpeed * 1.05)) * speedRatio;
+
+      this.speedTurn = Math.min(this.speedTurn + angAcc, maxTurn);
+
+      // Inercia lateral de neumáticos
+      const targetSlip = drift ? 0.28 : (0.08 * Math.abs(this.speedTurn / maxTurn));
+      this.lateralSlip += (targetSlip - this.lateralSlip) * 0.16;
+
+      // Rozamiento natural en curva fuerte
+      if (this.speedForward > v.maxNormalLinearSpeed * 0.96 && !drift) {
+        accel -= v.motorAcceleration * 0.20 * Math.abs(this.speedTurn / maxTurn);
+      }
+
       this.animator.goRight(drift);
+    } else {
+      // Sin input de giro: el agarre del asfalto estabiliza la inercia lateral rápidamente
+      this.lateralSlip *= 0.82;
+      if (Math.abs(this.lateralSlip) < 0.001) this.lateralSlip = 0;
     }
+
+    this.isDrifting = drift;
     return accel;
   }
 
@@ -541,7 +578,8 @@ class Driver {
     if (this.height === 0) accel += FRICTION;
     if ((!input.left && !input.right) ||
         (input.left && this.speedTurn > 0) || (input.right && this.speedTurn < 0)) {
-      this.speedTurn /= 1.2;
+      this.speedTurn *= Math.exp(-14.0 * dt);
+      if (Math.abs(this.speedTurn) < 0.001) this.speedTurn = 0;
     }
     this.popExpired(now);
     this._lastRace = race;
@@ -586,7 +624,7 @@ class Driver {
       this.height += this.speedUpwards * dt + 0.5 * GRAVITY * dt * dt;
       if (this.height < 0) {
         if (this.isRealPlayer) Sound.play('sfx_landing');
-        if (!this.heightByRamp && (input.left || input.right)) this.pressedToDrift = true;
+        if (!this.heightByRamp && (input.left || input.right || input.drift)) this.pressedToDrift = true;
         this.heightByRamp = false;
       }
       this.height = Math.max(0, this.height);
@@ -611,6 +649,15 @@ class Driver {
     const moveAngle = this.height === 0 ? this.posAngle : this.flightAngle;
     let dpx = Math.cos(moveAngle) * deltaSpace;
     let dpy = Math.sin(moveAngle) * deltaSpace;
+
+    // Inercia lateral y derrape realista de neumáticos
+    if (this.height === 0 && Math.abs(this.lateralSlip) > 0.0001) {
+      const latX = -Math.sin(moveAngle);
+      const latY = Math.cos(moveAngle);
+      dpx += latX * this.lateralSlip * deltaSpace * 2.8;
+      dpy += latY * this.lateralSlip * deltaSpace * 2.8;
+    }
+
     dpx += this.collisionMomentum.x; dpy += this.collisionMomentum.y;
     this.collisionMomentum.x /= 1.2; this.collisionMomentum.y /= 1.2;
     dpx += this.vectorialSpeed.x * dt; dpy += this.vectorialSpeed.y * dt;
