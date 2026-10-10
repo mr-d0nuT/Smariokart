@@ -1,0 +1,17 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Optional local tooling
+node_modules/
+coverage/
+*.log
+
+# Local diagnostics and release packages
+diag_output_*
+*.tmp
+*.zip
+
