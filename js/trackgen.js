@@ -221,9 +221,7 @@ function trackGenLand(def, extraBlocks = []) {
       let v;
       if (d <= w) v = 0;                                    // TRACK
       else if (d <= w + 40) v = th.offroad;                 // 路肩带（视觉+材质+出生缓冲）
-      else v = 3;                                           // 其余一律OUTER：
-      // 说明：若外场是可行驶SLOW，BFS会从终点带两侧绕行导致圈数梯度泄漏；
-      // 统一坠落制（同Ghost Valley/Bowser/Rainbow）保证梯度只沿环路传播。
+      else v = th.outerEdge !== undefined ? th.outerEdge : (th.voidTheme ? 3 : 2);
       land[ty * 128 + tx] = v;
     }
   }

@@ -21,48 +21,110 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle at 50% 50%, #151828, #050508);
+    background: #000;
+    overflow: hidden;
   }
   canvas#game {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: -moz-crisp-edges;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     display: block;
-    box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(255, 215, 0, 0.2);
-    border: 2px solid #222;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.95);
+    border: none;
+    outline: none;
+    cursor: pointer;
   }
 
-  /* Barra superior con botón de Selfie */
+  /* Barra superior con botones */
   .top-bar {
-    position: absolute;
+    position: fixed;
     top: 12px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
     align-items: center;
-    gap: 14px;
-    z-index: 5;
+    gap: 12px;
+    z-index: 50;
     pointer-events: auto;
+    transition: opacity 0.35s ease, transform 0.35s ease;
   }
   .btn-top-selfie {
     background: linear-gradient(180deg, #ffd700, #ff8800);
     color: #111;
     font-weight: 900;
-    font-size: 14px;
-    letter-spacing: 1px;
-    padding: 8px 18px;
+    font-size: 13px;
+    letter-spacing: 0.8px;
+    padding: 8px 16px;
     border: 3px solid #fff;
     border-radius: 24px;
     cursor: pointer;
     box-shadow: 0 0 16px rgba(255, 215, 0, 0.8), 2px 2px 0 #000;
     transition: transform 0.15s, box-shadow 0.15s;
     outline: none;
+    white-space: nowrap;
   }
   .btn-top-selfie:hover {
-    transform: scale(1.06);
+    transform: scale(1.05);
     box-shadow: 0 0 24px rgba(255, 235, 50, 1), 2px 2px 0 #000;
   }
   .btn-top-selfie:active {
     transform: scale(0.96);
+  }
+  .btn-top-fullscreen {
+    background: linear-gradient(180deg, #00d2ff, #0055cc);
+    color: #fff;
+    font-weight: 900;
+    font-size: 13px;
+    letter-spacing: 0.8px;
+    padding: 8px 16px;
+    border: 3px solid #fff;
+    border-radius: 24px;
+    cursor: pointer;
+    box-shadow: 0 0 16px rgba(0, 180, 255, 0.8), 2px 2px 0 #000;
+    transition: transform 0.15s, box-shadow 0.15s;
+    outline: none;
+    white-space: nowrap;
+  }
+  .btn-top-fullscreen:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 24px rgba(0, 220, 255, 1), 2px 2px 0 #000;
+  }
+  .btn-top-aspect {
+    background: linear-gradient(180deg, #38ef7d, #11998e);
+    color: #fff;
+    font-weight: 900;
+    font-size: 13px;
+    letter-spacing: 0.8px;
+    padding: 8px 14px;
+    border: 3px solid #fff;
+    border-radius: 24px;
+    cursor: pointer;
+    box-shadow: 0 0 16px rgba(56, 239, 125, 0.7), 2px 2px 0 #000;
+    transition: transform 0.15s, box-shadow 0.15s;
+    outline: none;
+    white-space: nowrap;
+  }
+  .btn-top-aspect:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 24px rgba(56, 239, 125, 1), 2px 2px 0 #000;
+  }
+
+  /* Ocultar barra superior y ayuda en pantalla completa cuando esté inactivo */
+  body.is-fullscreen.ui-hidden .top-bar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(-14px);
+  }
+  body.is-fullscreen.ui-hidden #hint {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(14px);
+  }
+  .top-bar:hover {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateX(-50%) translateY(0) !important;
   }
 
   /* Barra de ayuda inferior */
@@ -423,15 +485,17 @@
 </style>
 </head>
 <body>
-<div class="top-bar">
+<div class="top-bar" id="topBar">
   <button id="btnFloatingSelfie" class="btn-top-selfie" onclick="SelfieSetup.open()">📸 HAZTE UN SELFIE / TU CARA</button>
+  <button id="btnToggleFullscreen" class="btn-top-fullscreen" onclick="Game.toggleFullscreen()">⛶ PANTALLA COMPLETA</button>
+  <button id="btnToggleAspect" class="btn-top-aspect" onclick="Game.toggleAspectMode()" title="Cambiar proporción de pantalla">📺 4:3 (CRT)</button>
 </div>
 
 <div id="wrap">
   <canvas id="game" width="512" height="448"></canvas>
 </div>
 
-<div id="hint">← → Girar · X / W / ↑ Acelerar · Z / S / ↓ Frenar · C Salto/Derrape · E / Q Objeto · Enter Aceptar · Esc Pausa</div>
+<div id="hint">← → Girar · X / W / ↑ Gas · Z / S / ↓ Freno · C Salto/Derrape · E / Q Objeto · Enter OK · [F] Pantalla Completa</div>
 
 <!-- ========================================================
      MODAL DE CAPTURA DE SELFIE & PILOTO PERSONALIZADO
@@ -614,6 +678,23 @@
   else document.addEventListener('DOMContentLoaded', mount);
 })();
 </script>
-<!-- ===== /dOnuT badge ===== -->
+<!-- HUD auto-hide en pantalla completa -->
+<script>
+(function() {
+  var hudTimer = null;
+  function resetHud() {
+    document.body.classList.remove('ui-hidden');
+    clearTimeout(hudTimer);
+    if (document.body.classList.contains('is-fullscreen')) {
+      hudTimer = setTimeout(function() {
+        document.body.classList.add('ui-hidden');
+      }, 2800);
+    }
+  }
+  window.addEventListener('mousemove', resetHud);
+  window.addEventListener('pointerdown', resetHud);
+  window.addEventListener('keydown', resetHud);
+})();
+</script>
 </body>
 </html>

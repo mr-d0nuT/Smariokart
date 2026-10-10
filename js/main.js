@@ -17,6 +17,9 @@ const Game = {
   setState(s) {
     this.rawSetState(s);
   },
+  aspectMode: 'fit_crt',   // 'fit_crt' (4:3), 'fill' (16:9 estirado), 'fit_native' (8:7 / 512x448)
+  isFullscreen: false,
+
   /* 请求式切屏：交Fader淡出→全黑切换→自动淡入（对应原版设$32挂起） */
   transitionTo(s) {
     Fader.request(s);
@@ -24,22 +27,87 @@ const Game = {
 
   scaleCanvas() {
     const c = this.canvas;
-    const ratio = 512 / 448;
-    let w = window.innerWidth, h = window.innerHeight;
-    if (w / h > ratio) w = h * ratio; else h = w / ratio;
-    // Bug1修复：整数倍缩放必须宽和高都放得下（此前只按宽度floor(1920/512)=3，
-    // 但448*3=1344>1080 高度溢出，导致回退小数缩放而整体模糊）
-    const s = Math.min(Math.floor(w / 512), Math.floor(h / 448));
-    if (s >= 1) {
-      // 整数倍：像素完美清晰
-      c.style.width = 512 * s + 'px';
-      c.style.height = 448 * s + 'px';
+    if (!c) return;
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    let targetW = winW;
+    let targetH = winH;
+
+    if (this.aspectMode === 'fill') {
+      // Estirar a pantalla completa 100% (sin barras negras)
+      targetW = winW;
+      targetH = winH;
     } else {
-      // 放不下整数倍才用小数缩放（铺满可用区域）
-      c.style.width = Math.floor(w) + 'px';
-      c.style.height = Math.floor(h) + 'px';
+      // 4:3 (aspecto CRT clásico de SNES en TV) o 512:448 nativo
+      const ratio = (this.aspectMode === 'fit_native') ? (512 / 448) : (4 / 3);
+      if (winW / winH > ratio) {
+        // La pantalla es más ancha: el alto ocupa el 100% de la ventana
+        targetH = winH;
+        targetW = Math.round(winH * ratio);
+      } else {
+        // La pantalla es más alta: el ancho ocupa el 100% de la ventana
+        targetW = winW;
+        targetH = Math.round(winW / ratio);
+      }
     }
+
+    c.style.width = targetW + 'px';
+    c.style.height = targetH + 'px';
     if (this.ctx) this.ctx.imageSmoothingEnabled = false;
+  },
+
+  toggleFullscreen() {
+    const doc = document;
+    const elem = document.documentElement;
+    const isFull = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+    if (!isFull) {
+      const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
+      if (req) {
+        req.call(elem).then(() => {
+          this.scaleCanvas();
+        }).catch(err => {
+          console.warn('Fullscreen bloqueado por navegador:', err);
+        });
+      }
+    } else {
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+      if (exit) {
+        exit.call(doc).then(() => {
+          this.scaleCanvas();
+        }).catch(() => {});
+      }
+    }
+  },
+
+  toggleAspectMode() {
+    if (this.aspectMode === 'fit_crt') this.aspectMode = 'fill';
+    else if (this.aspectMode === 'fill') this.aspectMode = 'fit_native';
+    else this.aspectMode = 'fit_crt';
+
+    this.scaleCanvas();
+    const btn = document.getElementById('btnToggleAspect');
+    if (btn) {
+      if (this.aspectMode === 'fit_crt') btn.textContent = '📺 4:3 (CRT)';
+      else if (this.aspectMode === 'fill') btn.textContent = '↔️ 16:9 / TOTAL';
+      else btn.textContent = '🕹️ 8:7 (NATIVO)';
+    }
+  },
+
+  updateFullscreenUI() {
+    const doc = document;
+    const isFull = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+    this.isFullscreen = isFull;
+    const btn = document.getElementById('btnToggleFullscreen');
+    if (btn) {
+      btn.textContent = isFull ? '🗗 SALIR PANTALLA COMPLETA' : '⛶ PANTALLA COMPLETA';
+    }
+    if (isFull) {
+      document.body.classList.add('is-fullscreen');
+    } else {
+      document.body.classList.remove('is-fullscreen');
+    }
+    this.scaleCanvas();
   }
 };
 
@@ -49,8 +117,32 @@ async function boot() {
   Game.ctx = canvas.getContext('2d');
   Game.ctx.imageSmoothingEnabled = false;
   Game.scaleCanvas();
+
   window.addEventListener('resize', () => Game.scaleCanvas());
-  // 点击也恢复音频（浏览器手势策略）
+
+  // Listeners de cambio de pantalla completa del navegador
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(ev => {
+    document.addEventListener(ev, () => Game.updateFullscreenUI());
+  });
+
+  // Doble click en el canvas para alternar pantalla completa
+  canvas.addEventListener('dblclick', () => Game.toggleFullscreen());
+
+  // Atajos de teclado para pantalla completa: F o F11
+  window.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === 'f' || e.key === 'F' || e.key === 'F11') {
+      if (e.key === 'F11') e.preventDefault();
+      const modal = document.getElementById('selfieModal');
+      const isModalOpen = modal && !modal.classList.contains('hidden');
+      if (!isModalOpen) {
+        e.preventDefault();
+        Game.toggleFullscreen();
+      }
+    }
+  });
+
+  // Clic restaura audio (política de navegadores)
   window.addEventListener('pointerdown', () => Sound.resume());
   Input.init();
   Sound.init();

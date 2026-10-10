@@ -646,8 +646,8 @@ class TitleState {
    * 三模式：GP大奖赛 / MatchRace单挑 / Battle气球对战 */
   init() {
     this.idx = 0;
-    this.options = ['mario kart gp', 'match race', 'battle', '📸 selfie / tu cara'];
-    this.modes = ['gp', 'race', 'battle', 'selfie'];
+    this.options = ['mario kart gp', 'match race', 'battle', '📸 selfie / tu cara', '⛶ pantalla completa'];
+    this.modes = ['gp', 'race', 'battle', 'selfie', 'fullscreen'];
     this.scroll = 0;                 // 背景滚动位置（整图像素）
     this._age = 0;                   // 界面年龄帧：输入门控 + logo脉动节拍
     this.idle = 0;                   // 无输入计时：≥1602帧(26.7s)进attract演示
@@ -740,24 +740,25 @@ class TitleState {
       ctx.drawImage(lg, 6, 16, 234, 76, 256 - 234, 52, 468, 152);
     }
 
-    /* 菜单UI最后绘制：黑色半透明面板 + 四模式选项文字 + 提示行 */
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(80, 116, 352, 235);
+    /* 菜单UI最后绘制：黑色半透明面板 + 选项文字 + 提示行 */
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(70, 108, 372, 280);
     const hints = [
       '4 cups · 20 tracks · grand prix',
       'single race · all 20 tracks',
       'balloon battle · 4 arenas',
-      'foto selfie con webcam o imagen de tu cara'
+      'foto selfie con webcam o imagen de tu cara',
+      'pantalla completa completa (o tecla F)'
     ];
     this.options.forEach((o, i) => {
       const sel = i === this.idx;
-      Text.ui(ctx, (sel ? '▶ ' : '') + o.toUpperCase(), 256, 126 + i * 46, 20,
+      Text.ui(ctx, (sel ? '▶ ' : '') + o.toUpperCase(), 256, 120 + i * 44, 18,
               sel ? '#ffe060' : '#c0c0c0', 'center');
-      if (sel) Text.ui(ctx, hints[i], 256, 150 + i * 46, 11, '#8ab4ff', 'center');
+      if (sel) Text.ui(ctx, hints[i], 256, 142 + i * 44, 11, '#8ab4ff', 'center');
     });
     // 提示行：本级输入门未开时显示wait...（对应原版淡入完成后~150帧才收输入）
-    Text.ui(ctx, this._age > 150 ? '↑↓ select · enter confirm' : 'wait...',
-            256, 396, 13, '#aaaaaa', 'center');
+    Text.ui(ctx, this._age > 150 ? '↑↓ select · enter confirm · [f] pantalla completa' : 'wait...',
+            256, 404, 13, '#aaaaaa', 'center');
   }
   key(k) {
     this.idle = 0;                     // 任意按键清零attract计时
@@ -767,6 +768,10 @@ class TitleState {
     if (k === 'down') { this.idx = (this.idx + 1) % len; Sound.play('sfx_menumove'); }
     if (k === 'accept') {
       Sound.play('sfx_menuselect');
+      if (this.modes[this.idx] === 'fullscreen') {
+        if (typeof Game !== 'undefined' && Game.toggleFullscreen) Game.toggleFullscreen();
+        return;
+      }
       if (this.modes[this.idx] === 'selfie') {
         if (typeof SelfieSetup !== 'undefined') {
           SelfieSetup.open(() => {

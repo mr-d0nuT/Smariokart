@@ -470,6 +470,36 @@ class Driver {
     else this.vectorialSpeed = { x: -mx, y: -my };
   }
 
+  /* 判断当前地块是否为致命深渊/岩浆/深水（触发坠落救援）；普通草地/泥地/沙地为可驾驶越野路段 */
+  isLethalHazard(x, y) {
+    if (x < 0 || x > 1 || y < 0 || y > 1) return true;
+    const land = GameMap.getLand(x, y);
+    if (land !== Land.OUTER) return false;
+
+    const mat = GameMap.getMaterial(x, y);
+    // 深渊(VOID) 或 岩浆(LAVA) 必然坠落
+    if (mat === Material.VOID || mat === Material.LAVA) return true;
+    // 水域：外圈落水
+    if (mat === Material.WATER) return true;
+
+    // 程序化赛道判断其主题是否属于坠落型(voidTheme)
+    if (typeof RACE_TRACKS !== 'undefined' && typeof TRACKGEN_THEMES !== 'undefined') {
+      const def = RACE_TRACKS[GameMap.courseName];
+      if (def && TRACKGEN_THEMES[def.theme] && TRACKGEN_THEMES[def.theme].voidTheme) {
+        return true;
+      }
+    }
+
+    if (GameMap.courseName) {
+      const cn = GameMap.courseName;
+      if (cn.includes('ghost_valley') || cn.includes('rainbow_road') || cn.includes('bowser_castle')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /* 五点探边（移植 improvedCheckOfMapLands） */
   checkMapLands(nextX, nextY) {
     const half = (8 / 1024) / 3.5;
@@ -486,7 +516,7 @@ class Driver {
         this.speedForward = 0;
         return 'block';
       }
-      if (land === Land.OUTER) return 'outer';
+      if (this.isLethalHazard(sx, sy)) return 'outer';
     }
     return null;
   }
@@ -528,7 +558,8 @@ class Driver {
     if (this.isImmune()) accel *= 2;
 
     const land = GameMap.getLand(this.position.x, this.position.y);
-    if (land === Land.SLOW && !this.has(DS.STAR) && !this.has(DS.SPEED_UP)) {
+    const isSlowSurface = (land === Land.SLOW || (land === Land.OUTER && !this.isLethalHazard(this.position.x, this.position.y)));
+    if (isSlowSurface && !this.has(DS.STAR) && !this.has(DS.SPEED_UP)) {
       if (this.speedForward > this.vehicle.slowLandMaxLinearSpeed)
         accel += SLOW_LAND_ACC;
     }
