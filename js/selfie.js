@@ -36,6 +36,149 @@ const SelfieSetup = (() => {
   let animTime = 0;
   let onDoneCallback = null;
 
+  function getCurrentCrop() {
+    return photoMode === 'front' ? cropFront : cropBack;
+  }
+
+  function getActiveRaw() {
+    return photoMode === 'front' ? rawFrontCanvas : rawBackCanvas;
+  }
+
+  function applyZoom(z) {
+    const cr = getCurrentCrop();
+    cr.zoom = Math.max(0.7, Math.min(2.6, Math.round(z * 100) / 100));
+    if (zoomSlider) zoomSlider.value = cr.zoom;
+    if (zoomBadge) zoomBadge.textContent = Math.round(cr.zoom * 100) + '%';
+    updateActiveCrop(true);
+  }
+
+  function autoCenterCurrent() {
+    const raw = getActiveRaw();
+    const cr = getCurrentCrop();
+    if (photoMode === 'back') {
+      if (raw) {
+        const auto = FaceCut.autoDetectHeadCenter(raw);
+        cr.cx = auto.cx;
+        cr.cy = auto.cy;
+        cr.zoom = auto.zoom;
+      } else {
+        cr.cx = 0.50; cr.cy = 0.62; cr.zoom = 1.35;
+      }
+      if (camMsg) camMsg.textContent = '🎯 Nuca centrada automáticamente. Arrastra o usa zoom para afinar.';
+    } else {
+      cr.cx = 0.5; cr.cy = 0.5; cr.zoom = 1.0;
+      if (camMsg) camMsg.textContent = '🎯 Rostro centrado.';
+    }
+    if (zoomSlider) zoomSlider.value = cr.zoom;
+    if (zoomBadge) zoomBadge.textContent = Math.round(cr.zoom * 100) + '%';
+    updateActiveCrop(true);
+  }
+
+  function onDragStart(e) {
+    const raw = getActiveRaw();
+    if (!raw) return;
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    const cr = getCurrentCrop();
+    cropStartCx = cr.cx;
+    cropStartCy = cr.cy;
+    if (camBox) camBox.classList.add('is-dragging');
+  }
+
+  function onTouchStart(e) {
+    const raw = getActiveRaw();
+    if (!raw || !e.touches || !e.touches[0]) return;
+    isDragging = true;
+    dragStartX = e.touches[0].clientX;
+    dragStartY = e.touches[0].clientY;
+    const cr = getCurrentCrop();
+    cropStartCx = cr.cx;
+    cropStartCy = cr.cy;
+  }
+
+  function onDragMove(e) {
+    if (!isDragging) return;
+    const raw = getActiveRaw();
+    if (!raw) return;
+    const cr = getCurrentCrop();
+    const W = raw.width || 320, H = raw.height || 320;
+    const side = (Math.min(W, H) * 0.82) / cr.zoom;
+    const k = (shot ? shot.width : 320) / side;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    cr.cx = Math.max(0.05, Math.min(0.95, cropStartCx - dx / (W * k)));
+    cr.cy = Math.max(0.05, Math.min(0.95, cropStartCy - dy / (H * k)));
+    updateActiveCrop(false);
+  }
+
+  function onTouchMove(e) {
+    if (!isDragging || !e.touches || !e.touches[0]) return;
+    const raw = getActiveRaw();
+    if (!raw) return;
+    const cr = getCurrentCrop();
+    const W = raw.width || 320, H = raw.height || 320;
+    const side = (Math.min(W, H) * 0.82) / cr.zoom;
+    const k = (shot ? shot.width : 320) / side;
+    const dx = e.touches[0].clientX - dragStartX;
+    const dy = e.touches[0].clientY - dragStartY;
+    cr.cx = Math.max(0.05, Math.min(0.95, cropStartCx - dx / (W * k)));
+    cr.cy = Math.max(0.05, Math.min(0.95, cropStartCy - dy / (H * k)));
+    updateActiveCrop(false);
+  }
+
+  function onDragEnd() {
+    if (isDragging) {
+      isDragging = false;
+      if (camBox) camBox.classList.remove('is-dragging');
+      updateActiveCrop(true);
+    }
+  }
+
+  function drawFramedShot() {
+    const raw = getActiveRaw();
+    const cr = getCurrentCrop();
+    if (!shot) return;
+    const s = shot.getContext('2d');
+    s.imageSmoothingEnabled = true;
+    s.imageSmoothingQuality = 'high';
+    s.clearRect(0, 0, shot.width, shot.height);
+
+    if (raw) {
+      const W = raw.width || 320, H = raw.height || 320;
+      const side = (Math.min(W, H) * 0.82) / cr.zoom;
+      const k = shot.width / side;
+      const ox = (shot.width / 2) - cr.cx * W * k;
+      const oy = (shot.height / 2) - cr.cy * H * k;
+      s.drawImage(raw, ox, oy, W * k, H * k);
+    } else {
+      const activePhoto = (photoMode === 'front') ? currentFace : currentBack;
+      if (activePhoto) {
+        s.drawImage(activePhoto, 10, 10, shot.width - 20, shot.height - 20);
+      }
+    }
+  }
+
+  function updateActiveCrop(saveToPilot = true) {
+    const raw = getActiveRaw();
+    const cr = getCurrentCrop();
+    if (!raw) return;
+
+    const cut = FaceCut.cropOval(raw, cr.cx, cr.cy, cr.zoom);
+    if (photoMode === 'front') {
+      currentFace = cut;
+      cropFront.isContour = false;
+    } else {
+      currentBack = cut;
+    }
+
+    drawFramedShot();
+
+    if (saveToPilot) {
+      updatePilotFrames();
+    }
+  }
+
   function initUI() {
     root = $('selfieModal');
     if (!root) return;
@@ -281,6 +424,8 @@ const SelfieSetup = (() => {
     selectedChar = Game.playerChar || 0;
     currentFace = FaceDriver.faceCanvas;
     currentBack = FaceDriver.backCanvas;
+    if (!rawFrontCanvas && currentFace) rawFrontCanvas = currentFace;
+    if (!rawBackCanvas && currentBack) rawBackCanvas = currentBack;
     photoMode = 'front';
 
     if (nameInput) {
@@ -308,19 +453,30 @@ const SelfieSetup = (() => {
   }
 
   function refreshShot() {
+    const raw = getActiveRaw();
     const activePhoto = (photoMode === 'front') ? currentFace : currentBack;
-    const hasShot = !!activePhoto;
+    const hasShot = !!(raw || activePhoto);
+    const cr = getCurrentCrop();
 
     if (shot) shot.style.display = hasShot ? 'block' : 'none';
     const oval = root ? root.querySelector('.selfie-oval') : null;
-    if (oval) oval.style.display = hasShot ? 'none' : 'block';
+    if (oval) oval.style.display = 'block';
 
-    if (hasShot && shot) {
-      const s = shot.getContext('2d');
-      s.imageSmoothingEnabled = true;
-      s.imageSmoothingQuality = 'high';
-      s.clearRect(0, 0, shot.width, shot.height);
-      s.drawImage(activePhoto, 10, 10, shot.width - 20, shot.height - 20);
+    if (framingControls) {
+      if (hasShot && raw) {
+        framingControls.classList.remove('hidden');
+        if (zoomSlider) zoomSlider.value = cr.zoom;
+        if (zoomBadge) zoomBadge.textContent = Math.round(cr.zoom * 100) + '%';
+      } else {
+        framingControls.classList.add('hidden');
+      }
+    }
+    if (camBox) {
+      camBox.classList.toggle('can-drag', !!(hasShot && raw));
+    }
+
+    if (hasShot) {
+      drawFramedShot();
     }
 
     // Actualizar insignias de fotos listas
@@ -387,11 +543,16 @@ const SelfieSetup = (() => {
     counting = false;
 
     if (photoMode === 'front') {
+      rawFrontCanvas = r.raw;
       currentFace = r.face;
-      camMsg.textContent = '✅ ¡Cara frontal capturada en alta resolución! Ahora pulsa en "FOTO 2: TU NUCA" para fotografiarte por detrás.';
+      cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: !!r.detected };
+      camMsg.textContent = '✅ ¡Cara frontal capturada en alta resolución! Arrastra o usa zoom si quieres afinar.';
     } else {
-      currentBack = r.face;
-      camMsg.textContent = '✅ ¡Foto trasera de tu nuca capturada! Tu piloto tiene ambas vistas en máxima calidad.';
+      rawBackCanvas = r.raw;
+      const auto = FaceCut.autoDetectHeadCenter(rawBackCanvas);
+      cropBack = { cx: auto.cx, cy: auto.cy, zoom: auto.zoom };
+      currentBack = FaceCut.cropOval(rawBackCanvas, cropBack.cx, cropBack.cy, cropBack.zoom);
+      camMsg.textContent = '✅ ¡Foto trasera de tu nuca encuadrada! Arrastra o usa el zoom para afinar.';
     }
 
     playSfx('shutter');
@@ -407,8 +568,15 @@ const SelfieSetup = (() => {
 
   function retake() {
     camMsg.textContent = '';
-    if (photoMode === 'front') currentFace = null;
-    else currentBack = null;
+    if (photoMode === 'front') {
+      currentFace = null;
+      rawFrontCanvas = null;
+      cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: false };
+    } else {
+      currentBack = null;
+      rawBackCanvas = null;
+      cropBack = { cx: 0.5, cy: 0.62, zoom: 1.35 };
+    }
     updatePilotFrames();
     refreshShot();
   }
@@ -416,6 +584,10 @@ const SelfieSetup = (() => {
   function clearPhoto() {
     currentFace = null;
     currentBack = null;
+    rawFrontCanvas = null;
+    rawBackCanvas = null;
+    cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: false };
+    cropBack = { cx: 0.5, cy: 0.62, zoom: 1.35 };
     FaceDriver.clearFace();
     playSfx('confirm');
     refreshShot();
