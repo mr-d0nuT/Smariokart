@@ -114,38 +114,56 @@ class RedShell extends BaseItem {
     const a = forwardThrow ? angle : angle + Math.PI;
     const fx = Math.cos(a) * SHELL_FWD, fy = Math.sin(a) * SHELL_FWD;
     this.position.x += fx; this.position.y += fy;
-    this.vel = { x: fx * 75, y: fy * 75 };
+    const shellSpeed = 0.44;
+    this.vel = { x: Math.cos(a) * shellSpeed, y: Math.sin(a) * shellSpeed };
     this.target = forwardThrow ? target : null;
-    this.inactiveFrames = 10;
+    this.inactiveFrames = 8;
+    this.life = 10.0;
   }
   update(dt) {
     if (this.inactiveFrames > 0) this.inactiveFrames--;
+    this.life -= dt;
+    if (this.life <= 0) { this.used = true; return; }
+
     if (!this.target || this.target.finished) {
       this.position.x += this.vel.x * dt;
       this.position.y += this.vel.y * dt;
     } else {
-      // 沿梯度路径追踪目标
+      // Persecución activa del objetivo según vmbatlle RedShell::update
       const dx = this.target.position.x - this.position.x;
       const dy = this.target.position.y - this.position.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < 0.08) {
-        this.position.x += dx * 0.15;
-        this.position.y += dy * 0.15;
+
+      if (dist < 0.12) {
+        // En rango de impacto: aceleración directa al chasis del rival
+        const step = Math.min(1.0, 20.0 * dt);
+        this.position.x += dx * step;
+        this.position.y += dy * step;
       } else {
-        let gx = 0, gy = 0;
-        for (let i = 0; i < 3; i++) {
-          const nd = AI.getNextDirection(this.position.x + gx, this.position.y + gy);
-          gx += nd.x; gy += nd.y;
+        // Navegación por la pista + atracción hacia el rival a 1.4x de velocidad
+        const shellSpeed = 0.44;
+        let dirX = dx / dist, dirY = dy / dist;
+        const nd = AI.getNextDirection(this.position.x, this.position.y);
+        if (nd && isFinite(nd.x) && isFinite(nd.y)) {
+          const nm = Math.hypot(nd.x, nd.y) || 1;
+          dirX = (nd.x / nm) * 0.65 + (dx / dist) * 0.35;
+          dirY = (nd.y / nm) * 0.65 + (dy / dist) * 0.35;
         }
-        const m = Math.hypot(gx, gy) || 1;
-        const spd = 0.0064 * 75;
-        this.vel = { x: gx / m * spd, y: gy / m * spd };
+        const m = Math.hypot(dirX, dirY) || 1;
+        this.vel = { x: (dirX / m) * shellSpeed, y: (dirY / m) * shellSpeed };
         this.position.x += this.vel.x * dt;
         this.position.y += this.vel.y * dt;
       }
     }
-    if (this.position.x < 0 || this.position.x > 1 || this.position.y < 0 || this.position.y > 1 ||
-        GameMap.getLand(this.position.x, this.position.y) === Land.OUTER) this.used = true;
+
+    if (this.position.x < 0 || this.position.x > 1 || this.position.y < 0 || this.position.y > 1) {
+      this.used = true;
+    } else {
+      const land = GameMap.getLand(this.position.x, this.position.y);
+      if (land === Land.BLOCK) {
+        this.used = true;
+      }
+    }
   }
   sprite() { return ITEM_SPRITES.red; }
 }
@@ -170,17 +188,28 @@ function useItem(user, race, isFront) {
       if (user.isRealPlayer) Sound.play('sfx_throw');
       break;
     case PowerUp.RED_SHELL: {
-      // 对战模式：锁定最近存活对手（排名体系在对战中无意义）
       let target = null;
-      if (race.isBattle) {
-        let best = Infinity;
-        for (const d of race.drivers) {
-          if (d === user || d.balloons <= 0) continue;
-          const dd = (d.position.x - user.position.x) ** 2 + (d.position.y - user.position.y) ** 2;
-          if (dd < best) { best = dd; target = d; }
+      if (isFront) {
+        if (race.isBattle) {
+          let best = Infinity;
+          for (const d of race.drivers) {
+            if (d === user || (d.balloons !== undefined && d.balloons <= 0)) continue;
+            const dd = (d.position.x - user.position.x) ** 2 + (d.position.y - user.position.y) ** 2;
+            if (dd < best) { best = dd; target = d; }
+          }
+        } else {
+          // Primero el piloto que va por delante en la carrera
+          target = race.driverAheadOf(user);
+          if (!target || target.finished) {
+            // Si el usuario va en 1ª posición o el de delante ya acabó, buscar al rival más cercano
+            let bestDist = Infinity;
+            for (const d of race.drivers) {
+              if (d === user || d.finished) continue;
+              const dd = (d.position.x - user.position.x) ** 2 + (d.position.y - user.position.y) ** 2;
+              if (dd < bestDist) { bestDist = dd; target = d; }
+            }
+          }
         }
-      } else {
-        target = race.driverAheadOf(user);
       }
       race.items.push(new RedShell(user.position, target, user.posAngle, isFront, user.height));
       race.items[race.items.length - 1].ownerChar = user.charIdx;

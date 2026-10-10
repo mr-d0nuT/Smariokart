@@ -79,25 +79,75 @@ const FaceDriver = (() => {
     };
   }
 
-  function sampleTexture(tex, u, v) {
+  function smoothstep(e0, e1, x) {
+    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  }
+
+  /* Muestreo bilineal de alta fidelidad fotográfica (sin cuadricular ni pixelar) */
+  function sampleTextureBilinear(tex, u, v) {
     if (!tex || !tex.data) return { r: 180, g: 150, b: 120, a: 255 };
-    const su = Math.max(0, Math.min(1, u));
-    const sv = Math.max(0, Math.min(1, v));
-    const px = Math.min(tex.w - 1, Math.floor(su * tex.w));
-    const py = Math.min(tex.h - 1, Math.floor(sv * tex.h));
-    const idx = (py * tex.w + px) * 4;
+    const su = Math.max(0, Math.min(1, u)) * (tex.w - 1);
+    const sv = Math.max(0, Math.min(1, v)) * (tex.h - 1);
+    const x0 = Math.floor(su), y0 = Math.floor(sv);
+    const x1 = Math.min(tex.w - 1, x0 + 1);
+    const y1 = Math.min(tex.h - 1, y0 + 1);
+    const fx = su - x0, fy = sv - y0;
+    const d = tex.data, w = tex.w;
+
+    const i00 = (y0 * w + x0) * 4;
+    const i10 = (y0 * w + x1) * 4;
+    const i01 = (y1 * w + x0) * 4;
+    const i11 = (y1 * w + x1) * 4;
+
+    const w00 = (1 - fx) * (1 - fy);
+    const w10 = fx * (1 - fy);
+    const w01 = (1 - fx) * fy;
+    const w11 = fx * fy;
+
     return {
-      r: tex.data[idx],
-      g: tex.data[idx + 1],
-      b: tex.data[idx + 2],
-      a: tex.data[idx + 3]
+      r: Math.round(d[i00] * w00 + d[i10] * w10 + d[i01] * w01 + d[i11] * w11),
+      g: Math.round(d[i00 + 1] * w00 + d[i10 + 1] * w10 + d[i01 + 1] * w01 + d[i11 + 1] * w11),
+      b: Math.round(d[i00 + 2] * w00 + d[i10 + 2] * w10 + d[i01 + 2] * w01 + d[i11 + 2] * w11),
+      a: Math.round(d[i00 + 3] * w00 + d[i10 + 3] * w10 + d[i01 + 3] * w01 + d[i11 + 3] * w11)
     };
   }
 
-  /* Proyecta las fotos como textura sobre la forma 3D de la cabeza (elipsoide/esfera),
-   * adaptándose a la curvatura esférica, la rotación 3D en el ángulo alpha, el sombreado
-   * volumétrico de luz y el oscurecimiento de bordes estilo Super Nintendo. */
-  function render3DTexturedHead(alpha, headW, headH, frontCanvas, backCanvas) {
+  /* Extrae la cabeza 3D original del personaje y la adapta a la forma volumétrica */
+  function buildOrigHeadCanvas(origSlice, hx, hy, headW, headH, theme) {
+    const c = document.createElement('canvas');
+    c.width = headW;
+    c.height = headH;
+    const ctx = c.getContext('2d');
+
+    // Base sólida con gradiente temático del personaje para garantizar continuidad sin cortes
+    const grad = ctx.createLinearGradient(0, 0, 0, headH);
+    grad.addColorStop(0, theme.capColor || '#d81818');
+    grad.addColorStop(0.46, theme.capDark || '#880808');
+    grad.addColorStop(0.52, '#f2b484'); // Tono piel retro cálido
+    grad.addColorStop(1, '#c47844');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(headW / 2, headH / 2, headW * 0.45, headH * 0.46, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (origSlice) {
+      const cx = hx / 4;
+      const cy = hy / 4;
+      const srcSize = 18;
+      const sx = Math.max(0, cx - srcSize / 2);
+      const sy = Math.max(0, cy - srcSize / 2);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(origSlice, sx, sy, srcSize, srcSize, 0, 0, headW, headH);
+    }
+    return c;
+  }
+
+  /* Proyecta las fotos como textura sobre la forma 3D de la cabeza,
+   * fusionando perfectamente los laterales originales en 3D del personaje
+   * con la foto frontal y la foto trasera (o la parte de atrás original si no hay foto trasera). */
+  function render3DTexturedHead(alpha, headW, headH, frontCanvas, backCanvas, origHeadCanvas, theme) {
     const pad = 6;
     const outW = headW + pad * 2;
     const outH = headH + pad * 2;
@@ -109,7 +159,8 @@ const FaceDriver = (() => {
     const out = imgData.data;
 
     const frontTex = getCanvasPixelData(frontCanvas);
-    const backTex = getCanvasPixelData(backCanvas || frontCanvas);
+    const backTex = backCanvas ? getCanvasPixelData(backCanvas) : null;
+    const origTex = origHeadCanvas ? getCanvasPixelData(origHeadCanvas) : null;
 
     const Rx = headW / 2;
     const Ry = headH / 2;
@@ -137,61 +188,99 @@ const FaceDriver = (() => {
         // Coordenada Z de la superficie esférica 3D (profundidad hacia la pantalla)
         const z = Math.sqrt(1.0 - d2);
 
-        // Rotación 3D del vector normal/superficie respecto al eje vertical de la cabeza
+        // Rotación 3D del vector normal respecto al eje vertical de la cabeza
         const Xhead = nx * cosA + z * sinA;
         const Zhead = -nx * sinA + z * cosA;
 
-        // Coordenadas esféricas de la textura (longitud y latitud sobre la cabeza)
-        const angleH = Math.atan2(Xhead, Math.abs(Zhead)); // [-PI/2, PI/2]
-        const uNorm = 0.5 + (angleH / Math.PI) * 1.05;
-        const vNorm = 0.5 + (ny * 0.48);
+        // UV para la foto frontal (centrada en el rostro)
+        const uFront = 0.5 + Xhead * 0.52;
+        const vFront = 0.5 + ny * 0.48;
 
-        // Muestrear textura frontal o trasera con zona de transición suave en las sienes/orejas
-        let r = 0, g = 0, b = 0, a = 255;
-        const blendDist = 0.18;
+        // UV para la foto trasera (centrada en la nuca)
+        const uBack = 0.5 - Xhead * 0.52;
+        const vBack = 0.5 + ny * 0.48;
 
-        if (Zhead < -blendDist) {
-          // Vista frontal directa o ángulo delantero
-          const col = sampleTexture(frontTex, uNorm, vNorm);
-          r = col.r; g = col.g; b = col.b; a = col.a;
-        } else if (Zhead > blendDist) {
-          // Vista trasera o nuca
-          const col = sampleTexture(backTex, uNorm, vNorm);
-          r = col.r; g = col.g; b = col.b; a = col.a;
-        } else {
-          // Mezcla suave en el lateral/perfil de la cabeza (360° continuo)
-          const fCol = sampleTexture(frontTex, uNorm, vNorm);
-          const bCol = sampleTexture(backTex, uNorm, vNorm);
-          const t = (Zhead + blendDist) / (2 * blendDist); // 0 = frontal, 1 = trasera
-          r = (1 - t) * fCol.r + t * bCol.r;
-          g = (1 - t) * fCol.g + t * bCol.g;
-          b = (1 - t) * fCol.b + t * bCol.b;
-          a = Math.max(fCol.a, bCol.a);
+        // UV en espacio de pantalla para la cabeza original 3D del personaje
+        const uOrig = 0.5 + nx * 0.48;
+        const vOrig = 0.5 + ny * 0.48;
+
+        // Muestrear textura original (siempre disponible para laterales, orejas y donde no haya foto)
+        let oCol = origTex ? sampleTextureBilinear(origTex, uOrig, vOrig) : { r: 240, g: 180, b: 136, a: 255 };
+        if (!origTex || oCol.a < 40) {
+          const fb = origTex ? sampleTextureBilinear(origTex, 0.5 + nx * 0.22, 0.5 + ny * 0.22) : null;
+          if (fb && fb.a > 40) {
+            oCol = fb;
+          } else {
+            const isCap = ny < -0.05;
+            oCol = {
+              r: isCap ? (theme ? parseInt(theme.capColor.slice(1, 3), 16) : 216) : 240,
+              g: isCap ? (theme ? parseInt(theme.capColor.slice(3, 5), 16) : 24) : 180,
+              b: isCap ? (theme ? parseInt(theme.capColor.slice(5, 7), 16) : 24) : 136,
+              a: 255
+            };
+          }
         }
 
-        if (a < 10) continue;
+        // Ponderación de la foto frontal (rostro)
+        let wFront = 0;
+        let fCol = null;
+        if (frontTex) {
+          const zFactor = smoothstep(-0.06, -0.42, Zhead);
+          const latFactor = smoothstep(0.85, 0.52, Math.abs(Xhead));
+          wFront = zFactor * latFactor;
+          if (wFront > 0) {
+            fCol = sampleTextureBilinear(frontTex, uFront, vFront);
+            wFront *= (fCol.a / 255);
+          }
+        }
 
-        // Sombreado 3D volumétrico:
-        // Iluminación difusa (Lambertiana) + luz ambiental
+        // Ponderación de la foto trasera (nuca/pelo)
+        let wBack = 0;
+        let bCol = null;
+        if (backTex) {
+          const zFactor = smoothstep(0.06, 0.42, Zhead);
+          const latFactor = smoothstep(0.85, 0.52, Math.abs(Xhead));
+          wBack = zFactor * latFactor;
+          if (wBack > 0) {
+            bCol = sampleTextureBilinear(backTex, uBack, vBack);
+            wBack *= (bCol.a / 255);
+          }
+        }
+
+        // Fusión perfecta: donde no hay foto (laterales originales o nuca sin foto), la textura original en 3D toma el 100%
+        const wOrig = Math.max(0, 1.0 - wFront - wBack);
+
+        let r = wOrig * oCol.r;
+        let g = wOrig * oCol.g;
+        let b = wOrig * oCol.b;
+        let a = 255;
+
+        if (wFront > 0 && fCol) {
+          r += wFront * fCol.r;
+          g += wFront * fCol.g;
+          b += wFront * fCol.b;
+        }
+        if (wBack > 0 && bCol) {
+          r += wBack * bCol.r;
+          g += wBack * bCol.g;
+          b += wBack * bCol.b;
+        }
+
+        // Sombreado 3D volumétrico
         const NdotL = Math.max(0, nx * Lx + ny * Ly + z * Lz);
-        const ambient = 0.74;
-        const diffuse = 0.32 * NdotL;
-        // Oscurecimiento de borde (Limb darkening / Fresnel) para realzar el volumen esférico 3D
-        const rim = 0.52 + 0.48 * Math.pow(z, 0.42);
-        // Sombra suave proyectada por la gorra/visera en la frente y coronilla
-        const capShadow = (ny < -0.22) ? Math.max(0.72, 1.0 - 0.28 * Math.min(1, (-ny - 0.22) / 0.25)) : 1.0;
+        const ambient = 0.78;
+        const diffuse = 0.28 * NdotL;
+        const rim = 0.58 + 0.42 * Math.pow(z, 0.42);
+        const light = (ambient + diffuse) * rim;
 
-        const light = (ambient + diffuse) * rim * capShadow;
-
-        // Borde exterior con contorno de cómic retro (estilo SNES)
         const edgeFactor = 1.0 - d2;
         let outR = Math.min(255, Math.round(r * light));
         let outG = Math.min(255, Math.round(g * light));
         let outB = Math.min(255, Math.round(b * light));
 
-        if (edgeFactor < 0.08) {
-          const edgeT = edgeFactor / 0.08;
-          outR = Math.round(outR * edgeT + 20 * (1 - edgeT));
+        if (edgeFactor < 0.06) {
+          const edgeT = edgeFactor / 0.06;
+          outR = Math.round(outR * edgeT + 18 * (1 - edgeT));
           outG = Math.round(outG * edgeT + 12 * (1 - edgeT));
           outB = Math.round(outB * edgeT + 8 * (1 - edgeT));
         }
@@ -209,7 +298,10 @@ const FaceDriver = (() => {
   }
 
   /* Dibuja la gorra o accesorio temático adaptado al ángulo 3D y tamaño de la cabeza */
-  function drawBigHeadCap(fctx, hx, hy, tilt, alpha, theme, characterIndex, headW, headH) {
+  function drawBigHeadCap(fctx, hx, hy, tilt, alpha, theme, characterIndex, headW, headH, hasBackPhoto) {
+    // Si no hay foto de nuca y estamos en vista trasera (alpha < 1.35),
+    // la gorra/pelo original del personaje ya está presente en 3D
+    if (!hasBackPhoto && alpha < 1.35) return;
     fctx.save();
     // Situamos la gorra en la parte superior de la frente/coronilla
     fctx.translate(hx, hy - headH * 0.38);
@@ -396,7 +488,8 @@ const FaceDriver = (() => {
       const HEAD_W = 74;
       const HEAD_H = 80;
 
-      const head3D = render3DTexturedHead(alpha, HEAD_W, HEAD_H, userFaceCanvas, userBackCanvas);
+      const origHeadCanvas = buildOrigHeadCanvas(origSlice, hx, hy, HEAD_W, HEAD_H, theme);
+      const head3D = render3DTexturedHead(alpha, HEAD_W, HEAD_H, userFaceCanvas, userBackCanvas, origHeadCanvas, theme);
 
       fctx.save();
       fctx.translate(hx, hy);
@@ -417,7 +510,7 @@ const FaceDriver = (() => {
       fctx.restore();
 
       // 5. Dibujar la gorra / accesorios 3D del personaje
-      drawBigHeadCap(fctx, hx, hy, tilt, alpha, theme, characterIndex, HEAD_W, HEAD_H);
+      drawBigHeadCap(fctx, hx, hy, tilt, alpha, theme, characterIndex, HEAD_W, HEAD_H, !!userBackCanvas);
 
       frames.push(frameCanvas);
     }
@@ -443,7 +536,9 @@ const FaceDriver = (() => {
     ctx.beginPath(); ctx.arc(24, 24, 20, 0, Math.PI * 2); ctx.fill();
 
     // Cara 3D en alta calidad
-    const head3D = render3DTexturedHead(Math.PI, 36, 38, userFaceCanvas, userBackCanvas);
+    const origSlice = Assets.slice(theme.name, { x: 32 * 11, y: 32, w: 32, h: 32 });
+    const origHeadCanvas = buildOrigHeadCanvas(origSlice, 64, 44, 36, 38, theme);
+    const head3D = render3DTexturedHead(Math.PI, 36, 38, userFaceCanvas, userBackCanvas, origHeadCanvas, theme);
     ctx.save();
     ctx.beginPath(); ctx.arc(24, 25, 18, 0, Math.PI * 2); ctx.clip();
     ctx.drawImage(head3D, 24 - head3D.width / 2, 25 - head3D.height / 2);
@@ -475,7 +570,9 @@ const FaceDriver = (() => {
     ctx.beginPath(); ctx.arc(64, 64, 56, 0, Math.PI * 2); ctx.fill();
 
     // Cara 3D en alta resolución
-    const head3D = render3DTexturedHead(Math.PI, 92, 96, userFaceCanvas, userBackCanvas);
+    const origSlice = Assets.slice(theme.name, { x: 32 * 11, y: 32, w: 32, h: 32 });
+    const origHeadCanvas = buildOrigHeadCanvas(origSlice, 64, 44, 92, 96, theme);
+    const head3D = render3DTexturedHead(Math.PI, 92, 96, userFaceCanvas, userBackCanvas, origHeadCanvas, theme);
     ctx.save();
     ctx.beginPath(); ctx.arc(64, 66, 52, 0, Math.PI * 2); ctx.clip();
     ctx.drawImage(head3D, 64 - head3D.width / 2, 66 - head3D.height / 2);

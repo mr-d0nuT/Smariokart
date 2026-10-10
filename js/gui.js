@@ -146,22 +146,62 @@ const Gui = {
     }
   },
 
+  drawItemBox(ctx) {
+    const boxW = 56, boxH = 38;
+    const boxX = Math.round((512 - boxW) / 2); // Exactamente centrado arriba como en Super Mario Kart original
+    const boxY = 6;
+
+    // Marco estilo Super Mario Kart original (fondo negro + bisel dorado retro)
+    ctx.save();
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+
+    ctx.strokeStyle = '#e8c020'; // Dorado retro SNES
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(boxX + 1, boxY + 1, boxW - 2, boxH - 2);
+
+    ctx.strokeStyle = '#885808'; // Sombra biselada interior
+    ctx.lineWidth = 1;
+    ctx.strokeRect(boxX + 3, boxY + 3, boxW - 6, boxH - 6);
+
+    let drawIcon = 0;
+    if (this.roulette.active) {
+      // Ciclo rápido y emocionante de objetos (16 cambios por segundo)
+      const cycleItems = [1, 2, 3, 4, 5, 6, 7];
+      if (this.roulette.t < 0.22) {
+        // En los últimos instantes desacelera y fija el objeto aleatorio final
+        drawIcon = this.roulette.finalItem;
+      } else {
+        const step = Math.floor((2.0 - this.roulette.t) * 16);
+        drawIcon = cycleItems[step % cycleItems.length];
+      }
+    } else if (this.itemIcon && this.itemIcon > 0) {
+      drawIcon = this.itemIcon;
+    }
+
+    if (drawIcon > 0 && this.itemIcons[drawIcon]) {
+      ctx.drawImage(this.itemIcons[drawIcon], boxX + 4, boxY + 3, boxW - 8, boxH - 6);
+    }
+    ctx.restore();
+  },
+
   draw(ctx) {
-    // 计时器
+    const splitY = (typeof M7 !== 'undefined' && M7.SPLIT_Y) ? M7.SPLIT_Y : 320;
+
+    // 计时器（右上）
     this.drawTimer(ctx);
-    // 金币（左下）
-    ctx.drawImage(this.coinImg, 8, 448 - 34, 24, 24);
-    Text.write(ctx, String(this.coins), 38, 448 - 30, 3, '#ffe060');
-    // 道具槽（左上）
-    const iconIdx = this.roulette.active
-      ? (((this.time * 10) | 0) % 7) + 1
-      : this.itemIcon % 8;
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillRect(6, 6, 56, 40);
-    ctx.drawImage(this.itemIcons[iconIdx], 8, 8, 52, 36);
-    // 排名（右下）
+
+    // 道具槽（中央上方：ruleta ciclando objetos como el original）
+    this.drawItemBox(ctx);
+
+    // 金币（赛道屏左下，正好在分割线上方）
+    ctx.drawImage(this.coinImg, 8, splitY - 32, 24, 24);
+    Text.write(ctx, String(this.coins), 36, splitY - 28, 3, '#ffe060');
+
+    // 排名（赛道屏右下）
     const ranks = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
-    Text.write(ctx, ranks[Math.min(7, this.rank - 1)], 504, 216, 3, '#ffffff', 'right');
+    Text.write(ctx, ranks[Math.min(7, this.rank - 1)], 504, splitY - 28, 3, '#ffffff', 'right');
+
     // 圈数消息（Lake佬举牌）
     if (this.lapMsg) {
       const a = Math.min(1, this.lapMsg.t);
@@ -171,6 +211,7 @@ const Gui = {
       Text.write(ctx, this.lapMsg.text, 256, 150, 3, '#ffd040', 'center');
       ctx.globalAlpha = 1;
     }
+
     // 逆行警告
     if (this.wrongDir && ((this.time * 3 | 0) % 2 === 0)) {
       Text.write(ctx, 'wrong way!', 256, 120, 3, '#ff5050', 'center');

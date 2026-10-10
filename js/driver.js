@@ -120,11 +120,19 @@ class Driver {
     this.hitsDealt = 0;
     this.wasBalloonHit = false;
     this._lastRace = null;
+    this.steerProgress = 0;
+    this._starSound = null;
   }
 
   has(st) { return (this.state & st) !== 0; }
   pushState(st, endTime) { this.state |= st; this.stateEnd[Math.log2(st) | 0] = endTime; }
-  popState(st) { this.state &= ~st; this.stateEnd[Math.log2(st) | 0] = 0; }
+  popState(st) {
+    if (st & DS.STAR) {
+      if (this._starSound) { Sound.stop(this._starSound); this._starSound = null; }
+    }
+    this.state &= ~st;
+    this.stateEnd[Math.log2(st) | 0] = 0;
+  }
   popExpired(now) {
     for (let i = 0; i < 8; i++) {   // 含SHIELD(128)
       const st = 1 << i;
@@ -142,7 +150,10 @@ class Driver {
   applyStar() {
     this.pushState(DS.STAR, GameClock.now() + DUR.STAR);
     this.animator.starTime = DUR.STAR;
-    if (this.isRealPlayer) Sound.play('sfx_star', { volume: 0.6 });
+    if (this.isRealPlayer) {
+      if (this._starSound) Sound.stop(this._starSound);
+      this._starSound = Sound.play('sfx_star', { loop: true, volume: 0.65 });
+    }
   }
   applyThunder(duration) {
     this.speedTurn = 0;
@@ -204,8 +215,8 @@ class Driver {
     if (amount !== 0 && this.isRealPlayer) Sound.play('sfx_coin');
   }
 
-  /* ---------- 玩家操控 (Física de giro y derrape realista y ultra-jugable) ---------- */
-  playerControls(accel, input, now) {
+  /* ---------- 玩家操控 (Física de giro suave, progresiva y ultra-jugable) ---------- */
+  playerControls(accel, input, now, dt = 0.016) {
     const v = this.vehicle;
     if (this.height === 0) {
       if (input.accel) accel = simulateSpeedGraph(this, accel);
@@ -213,64 +224,69 @@ class Driver {
     }
 
     // Sensibilidad progresiva según la velocidad de avance
-    const speedRatio = Math.max(0.18, Math.min(1.0, this.speedForward / (v.maxNormalLinearSpeed * 0.45)));
-    const wantsDrift = !!((input.drift || this.pressedToDrift) && (this.speedForward > v.maxNormalLinearSpeed * 0.22));
+    const speedRatio = Math.max(0.20, Math.min(1.0, this.speedForward / (v.maxNormalLinearSpeed * 0.42)));
+    const wantsDrift = !!((input.drift || this.pressedToDrift) && (this.speedForward > v.maxNormalLinearSpeed * 0.20));
     let drift = false;
 
     if (input.left && !input.right) {
+      this.steerProgress = Math.min(1.0, this.steerProgress + dt * 3.4);
+      const ramp = Math.pow(this.steerProgress, 1.25);
+
       if (this.pressedToDrift) {
-        this.speedTurn = -v.maxTurningAngularSpeed * 0.52;
+        this.speedTurn = -v.maxTurningAngularSpeed * 0.50;
         this.pressedToDrift = false;
       }
 
-      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.52) {
+      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.50) {
         drift = true;
       }
 
-      // Dirección ágil y reactiva sin retraso artificial (eliminado el deadzone de 0.15)
-      const angAcc = drift ? (v.turningAcceleration * 2.4) : (v.turningAcceleration * 1.75 * speedRatio);
-      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.30) : (v.maxTurningAngularSpeed * 1.05)) * speedRatio;
+      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.25) : (v.maxTurningAngularSpeed * 0.98)) * speedRatio;
+      const targetTurn = -maxTurn * ramp;
 
-      this.speedTurn = Math.max(this.speedTurn - angAcc, -maxTurn);
+      // Giro suave y progresivo con aproximación exponencial
+      this.speedTurn += (targetTurn - this.speedTurn) * (1 - Math.exp(-9.5 * dt));
 
-      // Inercia lateral de neumáticos: la inercia empuja al exterior de la curva en derrape
-      const targetSlip = drift ? -0.28 : (-0.08 * Math.abs(this.speedTurn / maxTurn));
+      const targetSlip = drift ? -0.26 : (-0.06 * Math.abs(this.speedTurn / maxTurn));
       this.lateralSlip += (targetSlip - this.lateralSlip) * 0.16;
 
-      // Rozamiento natural en curva fuerte (sin ahogar el motor bruscamente)
       if (this.speedForward > v.maxNormalLinearSpeed * 0.96 && !drift) {
-        accel -= v.motorAcceleration * 0.20 * Math.abs(this.speedTurn / maxTurn);
+        accel -= v.motorAcceleration * 0.15 * Math.abs(this.speedTurn / maxTurn);
       }
 
       this.animator.goLeft(drift);
     } else if (input.right && !input.left) {
+      this.steerProgress = Math.min(1.0, this.steerProgress + dt * 3.4);
+      const ramp = Math.pow(this.steerProgress, 1.25);
+
       if (this.pressedToDrift) {
-        this.speedTurn = v.maxTurningAngularSpeed * 0.52;
+        this.speedTurn = v.maxTurningAngularSpeed * 0.50;
         this.pressedToDrift = false;
       }
 
-      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.52) {
+      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.50) {
         drift = true;
       }
 
-      // Dirección ágil y reactiva sin retraso artificial
-      const angAcc = drift ? (v.turningAcceleration * 2.4) : (v.turningAcceleration * 1.75 * speedRatio);
-      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.30) : (v.maxTurningAngularSpeed * 1.05)) * speedRatio;
+      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.25) : (v.maxTurningAngularSpeed * 0.98)) * speedRatio;
+      const targetTurn = maxTurn * ramp;
 
-      this.speedTurn = Math.min(this.speedTurn + angAcc, maxTurn);
+      // Giro suave y progresivo con aproximación exponencial
+      this.speedTurn += (targetTurn - this.speedTurn) * (1 - Math.exp(-9.5 * dt));
 
-      // Inercia lateral de neumáticos
-      const targetSlip = drift ? 0.28 : (0.08 * Math.abs(this.speedTurn / maxTurn));
+      const targetSlip = drift ? 0.26 : (0.06 * Math.abs(this.speedTurn / maxTurn));
       this.lateralSlip += (targetSlip - this.lateralSlip) * 0.16;
 
-      // Rozamiento natural en curva fuerte
       if (this.speedForward > v.maxNormalLinearSpeed * 0.96 && !drift) {
-        accel -= v.motorAcceleration * 0.20 * Math.abs(this.speedTurn / maxTurn);
+        accel -= v.motorAcceleration * 0.15 * Math.abs(this.speedTurn / maxTurn);
       }
 
       this.animator.goRight(drift);
     } else {
-      // Sin input de giro: el agarre del asfalto estabiliza la inercia lateral rápidamente
+      // Re-centrado suave y natural del volante
+      this.steerProgress = Math.max(0, this.steerProgress - dt * 5.5);
+      this.speedTurn *= Math.exp(-9.0 * dt);
+      if (Math.abs(this.speedTurn) < 0.001) this.speedTurn = 0;
       this.lateralSlip *= 0.82;
       if (Math.abs(this.lateralSlip) < 0.001) this.lateralSlip = 0;
     }
@@ -603,8 +619,10 @@ class Driver {
     }
     if (this.height === 0) {
       if (land === Land.OIL_SLICK) {
-        this.applyHit();
-        this.speedForward = Math.max(this.speedForward, 0.01);
+        if (!this.isImmune()) {
+          this.applyHit();
+          this.speedForward = Math.max(this.speedForward, 0.01);
+        }
       } else if (land === Land.RAMP_H || land === Land.RAMP_V) {
         this.jumpRamp(land);
       } else if (land === Land.ZIPPER) {
@@ -850,7 +868,7 @@ class Driver {
   solveCollision(other) {
     if (Math.abs(this.height - other.height) > 5) return null;
     if (this.isImmune() && !other.isImmune())
-      return { momentum: { x: 0, y: 0 }, speedFactor: 0.4, hit: true };
+      return { momentum: { x: 0, y: 0 }, speedFactor: 1.0, hit: false, hitOther: true };
     if (!this.isImmune() && other.isImmune()) return null;
     const mySpeed = Math.max(this.speedForward, 1e-6);
     const othSpeed = Math.max(Math.hypot(other.speedForward * Math.cos(other.posAngle),

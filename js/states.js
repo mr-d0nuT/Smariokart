@@ -141,13 +141,13 @@ const View = {
   init() {
     this.circuitCanvas = document.createElement('canvas');
     this.circuitCanvas.width = 512;
-    // 阶段4-B5：原版构图下路面渲染到 y=448（204行），remake 布局保持 184 行
-    this.circuitCanvas.height = AUTHENTIC_LAYOUT ? 204 : Math.round(448 * M7.CIRCUIT_HEIGHT_PCT);
+    this.circuitCanvas.height = Math.round(448 * (M7.CIRCUIT_HEIGHT_PCT || (276 / 448)));
     this.circuitImageData = this.circuitCanvas.getContext('2d')
       .createImageData(512, this.circuitCanvas.height);
   },
 
   drawSky(ctx, modAngle) {
+    const skyH = M7.SKY_HEIGHT || 44;
     const layers = [
       { img: GameMap.skyBack, front: false },
       { img: GameMap.skyFront, front: true }
@@ -162,15 +162,15 @@ const View = {
       while (dx < 512) {
         const avail = Math.min(w - sx, 512 - dx);
         if (avail <= 0) break;
-        ctx.drawImage(L.img, sx, ySrc, avail, h, dx, 0, avail * (40 / h) + 1, 40);
-        dx += avail * (40 / h);
+        ctx.drawImage(L.img, sx, ySrc, avail, h, dx, 0, avail * (skyH / h) + 1, skyH);
+        dx += avail * (skyH / h);
         sx = 0;
       }
     }
   },
 
   drawCircuit(ctx, camPos, camAngle, mosaic = 0) {
-    // 阶段2：默认走定点逐行参数表路径（RESTORE_PLAN B1/B2）；M7.useFixed=false 回退浮点
+    const skyH = M7.SKY_HEIGHT || 44;
     if (M7.useFixed !== false) {
       const table = M7.buildRowTable(512, this.circuitCanvas.height,
         camPos, camAngle, M7.FOV_HALF, M7.CLIP_NEAR, M7.CLIP_FAR, true);
@@ -182,7 +182,7 @@ const View = {
                 true, GameMap.courseSrc, GameMap.edgeSrc);
     }
     this.circuitCanvas.getContext('2d').putImageData(this.circuitImageData, 0, 0);
-    ctx.drawImage(this.circuitCanvas, 0, 40);
+    ctx.drawImage(this.circuitCanvas, 0, skyH);
   },
 
   /* 收集并按远近排序绘制所有投影精灵
@@ -190,6 +190,8 @@ const View = {
    * 对应C++ racestart.cpp::draw 不调用 player->getDrawables） */
   drawSprites(ctx, camDriver, race, showPlayerKart = true) {
     const list = [];
+    const skyH = M7.SKY_HEIGHT || 44;
+    const circuitH = this.circuitCanvas ? this.circuitCanvas.height : 276;
     const camPos = {
       x: camDriver.position.x - Math.cos(camDriver.posAngle) * (M7.CAM_2_PLAYER_DST / 1024),
       y: camDriver.position.y - Math.sin(camDriver.posAngle) * (M7.CAM_2_PLAYER_DST / 1024)
@@ -205,7 +207,7 @@ const View = {
     const place = (scr, w, h, heightUnits, zscale) => {
       return {
         x: scr.x * 512,
-        y: scr.y * 184 + 40 - heightUnits * zscale,
+        y: scr.y * circuitH + skyH - heightUnits * zscale,
         w, h
       };
     };
@@ -286,7 +288,7 @@ const View = {
         z: pz,
         draw: () => {
           const scale = 2;
-          const px = 256, py = 448 * 0.45;
+          const px = 256, py = (M7.SPLIT_Y || 320) - 34;
           camDriver.animator.drawParticles(ctx, px, py, scale,
             GameMap.getMaterial(camDriver.position.x, camDriver.position.y),
             camDriver.speedForward > camDriver.vehicle.maxNormalLinearSpeed / 4 && camDriver.height === 0);
@@ -302,13 +304,31 @@ const View = {
   },
 
   drawMinimap(ctx, race) {
+    const splitY = (typeof M7 !== 'undefined' && M7.SPLIT_Y) ? M7.SPLIT_Y : 320;
+    const mapH = 448 - splitY;
+
+    // Fondo del minimapa
+    ctx.fillStyle = '#080812';
+    ctx.fillRect(0, splitY, 512, mapH);
+
+    // Dibujar el minimapa renderizado
+    if (GameMap.minimapCanvas) {
+      ctx.drawImage(GameMap.minimapCanvas, 0, splitY, 512, mapH);
+    }
+
+    // Línea divisoria elegante estilo Super Mario Kart
+    ctx.fillStyle = '#f8d020';
+    ctx.fillRect(0, splitY - 2, 512, 2);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, splitY, 512, 1);
+
     const drawDrivers = () => {
       const drivers = [...race.drivers].sort((a, b) => a.position.y - b.position.y);
       for (const d of drivers) {
         if (d.has(DS.INVISIBLE)) continue;
         const mc = GameMap.mapCoordinates(d.position.x, d.position.y);
         const vf = d.animator.viewFrame(d.posAngle + d.speedTurn * 0.2 + Math.PI / 2);
-        const s2 = 14;
+        const s2 = 12;
         ctx.save();
         ctx.translate(mc.x * 512, mc.y * 448);
         if (d.isRealPlayer && typeof FaceDriver !== 'undefined' && FaceDriver.active && FaceDriver.minimapIcon) {
@@ -321,21 +341,7 @@ const View = {
       }
     };
 
-    // 默认完整下半屏地图；地图本身和车手标记都使用 512x448 的最终画面坐标。
-    if (!AUTHENTIC_LAYOUT) {
-      ctx.drawImage(GameMap.minimapCanvas, 0, 224);
-      drawDrivers();
-    } else {
-      const sc = 0.42;
-      const ox = 512 - 512 * sc - 8, oy = 448 - 224 * sc - 6;
-      ctx.save();
-      ctx.globalAlpha = 0.92;
-      ctx.translate(ox, oy); ctx.scale(sc, sc); ctx.translate(0, -224);
-      // 此分支只作为研究开关保留；将 224px 高的地图放回其逻辑 y=224..448 区间。
-      ctx.drawImage(GameMap.minimapCanvas, 0, 224);
-      drawDrivers();
-      ctx.restore();
-    }
+    drawDrivers();
   }
 };
 
@@ -519,8 +525,22 @@ class Race {
           a.collisionMomentum.y += data.momentum.y;
           a.speedForward *= data.speedFactor;
           a.speedTurn *= data.speedFactor;
-          if (data.hit) a.applyHit();
-          else if (!a.isImmune()) a.addCoin(-1);
+          if (data.hitOther) {
+            b.applyHit();
+            const bdx = b.position.x - a.position.x, bdy = b.position.y - a.position.y;
+            const bdist = Math.max(Math.hypot(bdx, bdy), 1e-6);
+            b.collisionMomentum.x += (bdx / bdist) * 0.06;
+            b.collisionMomentum.y += (bdy / bdist) * 0.06;
+            b.speedForward *= 0.25;
+            this.addSparkles(b.position);
+            if (a.isRealPlayer || b.isRealPlayer) {
+              Sound.play('sfx_hit');
+            }
+          } else if (data.hit) {
+            a.applyHit();
+          } else if (!a.isImmune()) {
+            a.addCoin(-1);
+          }
         }
       }
     }
@@ -551,6 +571,7 @@ class Race {
         } else {
           // 管道：实体碰撞半径0.55格(管道0.2+车0.35)，接触才有事
           if (d2 > 0.55 * 0.55) continue;
+          if (d.isImmune()) continue;                 // 星星无敌直接冲破管道免撞
           if (!d._pipeCd) d._pipeCd = {};
           if (nowW < (d._pipeCd[wi] || 0)) continue;  // 每根管道1秒一次结算
           d._pipeCd[wi] = nowW + 1;
@@ -559,7 +580,7 @@ class Race {
           d.collisionMomentum.x += dx / m * 0.05;
           d.collisionMomentum.y += dy / m * 0.05;
           d.speedForward *= 0.55;
-          if (!d.isImmune()) d.addCoin(-1);
+          d.addCoin(-1);
         }
       }
     }
@@ -1320,9 +1341,10 @@ class RaceState {
       drift: Input.down('drift')
     };
     if (Input.pressed('drift') && p.canDrive()) p.shortJump();
-    if (Input.pressed('itemfront') && p.canDrive() && p.powerUp !== PowerUp.NONE)
+    const canUseItem = p.canDrive() && p.powerUp !== PowerUp.NONE && !Gui.roulette.active && GameClock.now() >= p.canUseItemAt;
+    if (Input.pressed('itemfront') && canUseItem)
       useItem(p, this.race, true);
-    if (Input.pressed('itemback') && p.canDrive() && p.powerUp !== PowerUp.NONE)
+    if (Input.pressed('itemback') && canUseItem)
       useItem(p, this.race, false);
     this.race.update(dt, input);
     Sound.updateEngine(clamp(p.speedForward / p.vehicle.maxNormalLinearSpeed, 0, 2));
@@ -1500,9 +1522,10 @@ class BattleState {
       drift: Input.down('drift')
     };
     if (Input.pressed('drift') && p.canDrive()) p.shortJump();
-    if (Input.pressed('itemfront') && p.canDrive() && p.powerUp !== PowerUp.NONE)
+    const canUseItem = p.canDrive() && p.powerUp !== PowerUp.NONE && !Gui.roulette.active && GameClock.now() >= p.canUseItemAt;
+    if (Input.pressed('itemfront') && canUseItem)
       useItem(p, this.race, true);
-    if (Input.pressed('itemback') && p.canDrive() && p.powerUp !== PowerUp.NONE)
+    if (Input.pressed('itemback') && canUseItem)
       useItem(p, this.race, false);
     this.race.update(dt, input);
     Sound.updateEngine(clamp(p.speedForward / p.vehicle.maxNormalLinearSpeed, 0, 2));

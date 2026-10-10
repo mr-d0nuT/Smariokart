@@ -266,7 +266,7 @@ const GameMap = {
 
   /* ---------- 小地图（非透视mode7，一次性生成） ---------- */
   buildMinimap() {
-    const w = 512, h = Math.round(448 * M7.MINIMAP_HEIGHT_PCT);  // 224
+    const w = 512, h = (typeof M7 !== 'undefined' && M7.MINIMAP_HEIGHT) ? M7.MINIMAP_HEIGHT : Math.round(448 * (M7.MINIMAP_HEIGHT_PCT || 0.286));
     const cv = document.createElement('canvas');
     cv.width = w; cv.height = h;
     const id = cv.getContext('2d').createImageData(w, h);
@@ -279,9 +279,13 @@ const GameMap = {
     this.minimapCanvas = cv;
   },
 
-  /* 小地图梯形坐标映射（忠实移植 mapCoordinates） */
+  /* 小地图梯形坐标映射 */
   mapCoordinates(x, y) {
-    const bottomX = 20/512, bottomY = 438/448, topX = 57/512, topY = 252/448;
+    const splitY = (typeof M7 !== 'undefined' && M7.SPLIT_Y) ? M7.SPLIT_Y : 320;
+    const mapH = 448 - splitY;
+    const bottomX = 20/512, topX = 57/512;
+    const topY = (splitY + mapH * 0.125) / 448;
+    const bottomY = (splitY + mapH * 0.955) / 448;
     const mlX = topX + (bottomX - topX) * y;
     const mlY = topY + (bottomY - topY) * y;
     const mrX = 1 - mlX;

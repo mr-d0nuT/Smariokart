@@ -5,14 +5,19 @@
 'use strict';
 
 const M7 = {
-  // 与 C++ 版完全一致的常量
+  // Proporciones de pantalla: Pantalla de juego más alta y minimapa 3D compacto
+  SPLIT_Y: 320,                       // Línea divisoria en y=320 (el juego ocupa el 71.4% de la altura de 448px)
+  SKY_HEIGHT: 44,                     // Altura del cielo: 44px
+  CIRCUIT_HEIGHT: 276,                // Altura del circuito Mode 7: 276px (¡50% más alto que los 184px anteriores!)
+  MINIMAP_HEIGHT: 128,                // Altura del minimapa 3D: 128px (más pequeño y estilizado)
+  SKY_HEIGHT_PCT: 44 / 448,
+  CIRCUIT_HEIGHT_PCT: 276 / 448,
+  MINIMAP_HEIGHT_PCT: 128 / 448,
+
   FOV_HALF: 0.5,
   CLIP_NEAR: 0.0005,
   CLIP_FAR: 0.045,
   CAM_2_PLAYER_DST: 46,
-  SKY_HEIGHT_PCT: 2.0 / 22.4,
-  CIRCUIT_HEIGHT_PCT: 9.2 / 22.4,
-  MINIMAP_HEIGHT_PCT: 11.2 / 22.4,
 
   /* 把canvas转为可直接采样的像素数据 */
   sourceData(canvas) {

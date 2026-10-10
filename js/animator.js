@@ -8,6 +8,8 @@
 const HIT_TEX_IDX = [0,1,2,3,4,5,6,7,7,8,8,9,9,10,10,11,
                      11,10,10,9,9,8,8,7,7,6,5,4,3,2,1,0];
 
+const STAR_COLORS = ['#ffe800', '#00f2ff', '#ff2a6d', '#39ff14', '#ff7700', '#ffffff'];
+
 class Animator {
   constructor(driverFile) {
     const sheet = Assets.img(driverFile);
@@ -125,13 +127,47 @@ class Animator {
     ctx.save();
     ctx.translate(x, y + bob);
     if (f.mirror) ctx.scale(-1, 1);
-    if (this.starTime > 0) ctx.filter = `hue-rotate(${(this.starTime * 720) % 360}deg) saturate(2)`;
+
     const prevSmooth = ctx.imageSmoothingEnabled;
     if (this.hasCustomFace) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
     }
-    ctx.drawImage(img, -w / 2, -h, w, h);
+
+    if (this.starTime > 0 && typeof document !== 'undefined') {
+      const cIdx = Math.floor((this.starTime * 16) % STAR_COLORS.length);
+      const starCol = STAR_COLORS[cIdx];
+      ctx.shadowColor = starCol;
+      ctx.shadowBlur = 14 * (baseScale / 2);
+
+      if (!Animator._starCanvas && document.createElement) {
+        Animator._starCanvas = document.createElement('canvas');
+      }
+      const sc = Animator._starCanvas;
+      if (sc && sc.getContext) {
+        const sw = Math.max(1, Math.ceil(w));
+        const sh = Math.max(1, Math.ceil(h));
+        if (sc.width < sw || sc.height < sh) {
+          sc.width = Math.max(sw, 128);
+          sc.height = Math.max(sh, 128);
+        }
+        const sctx = sc.getContext('2d');
+        sctx.clearRect(0, 0, sw, sh);
+        sctx.drawImage(img, 0, 0, sw, sh);
+        sctx.save();
+        sctx.globalCompositeOperation = 'source-atop';
+        sctx.fillStyle = starCol;
+        sctx.globalAlpha = 0.55;
+        sctx.fillRect(0, 0, sw, sh);
+        sctx.restore();
+        ctx.drawImage(sc, 0, 0, sw, sh, -w / 2, -h, w, h);
+      } else {
+        ctx.drawImage(img, -w / 2, -h, w, h);
+      }
+    } else {
+      ctx.drawImage(img, -w / 2, -h, w, h);
+    }
+
     ctx.imageSmoothingEnabled = prevSmooth;
     ctx.restore();
   }
