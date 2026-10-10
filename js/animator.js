@@ -126,7 +126,13 @@ class Animator {
     ctx.translate(x, y + bob);
     if (f.mirror) ctx.scale(-1, 1);
     if (this.starTime > 0) ctx.filter = `hue-rotate(${(this.starTime * 720) % 360}deg) saturate(2)`;
+    const prevSmooth = ctx.imageSmoothingEnabled;
+    if (this.hasCustomFace) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
     ctx.drawImage(img, -w / 2, -h, w, h);
+    ctx.imageSmoothingEnabled = prevSmooth;
     ctx.restore();
   }
 

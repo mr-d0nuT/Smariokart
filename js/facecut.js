@@ -1,5 +1,5 @@
 'use strict';
-const FACE_SIZE = 160;
+const FACE_SIZE = 256;
 // Recorte automático de la cara con MediaPipe Face Landmarker (se ejecuta en el navegador).
 // Detecta los 478 puntos de la cara, se queda con el contorno (óvalo facial) y elimina el fondo.
 // Si no se puede cargar (sin conexión, navegador antiguo…), se usa un óvalo difuminado.
