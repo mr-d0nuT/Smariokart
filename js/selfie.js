@@ -142,7 +142,9 @@ const SelfieSetup = (() => {
     const s = shot.getContext('2d');
     s.imageSmoothingEnabled = true;
     s.imageSmoothingQuality = 'high';
-    s.clearRect(0, 0, shot.width, shot.height);
+    // Fondo opaco oscuro sólido para que el vídeo en vivo jamás se transparente por detrás
+    s.fillStyle = '#080810';
+    s.fillRect(0, 0, shot.width, shot.height);
 
     if (raw) {
       const W = raw.width || 320, H = raw.height || 320;
@@ -264,6 +266,20 @@ const SelfieSetup = (() => {
       fileInput.onchange = () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) return;
+        counting = false;
+        if (photoMode === 'front') {
+          currentFace = null;
+          rawFrontCanvas = null;
+        } else {
+          currentBack = null;
+          rawBackCanvas = null;
+        }
+        if (shot) {
+          shot.style.display = 'none';
+          const s = shot.getContext('2d');
+          if (s) s.clearRect(0, 0, shot.width, shot.height);
+        }
+        if (video) video.style.visibility = 'visible';
         const img = new Image();
         img.onload = async () => {
           if (FaceCut.status === 'loading') await FaceCut.load();
@@ -444,6 +460,8 @@ const SelfieSetup = (() => {
 
   function close() {
     active = false;
+    counting = false;
+    if (countdownEl) countdownEl.textContent = '';
     if (root) root.classList.add('hidden');
     stopCamera();
     if (onDoneCallback) {
@@ -455,10 +473,19 @@ const SelfieSetup = (() => {
   function refreshShot() {
     const raw = getActiveRaw();
     const activePhoto = (photoMode === 'front') ? currentFace : currentBack;
-    const hasShot = !!(raw || activePhoto);
+    const hasShot = !counting && !!(raw || activePhoto);
     const cr = getCurrentCrop();
 
-    if (shot) shot.style.display = hasShot ? 'block' : 'none';
+    if (shot) {
+      shot.style.display = hasShot ? 'block' : 'none';
+      if (!hasShot) {
+        const s = shot.getContext('2d');
+        if (s) s.clearRect(0, 0, shot.width, shot.height);
+      }
+    }
+    if (video) {
+      video.style.visibility = hasShot ? 'hidden' : 'visible';
+    }
     const oval = root ? root.querySelector('.selfie-oval') : null;
     if (oval) oval.style.display = 'block';
 
@@ -502,11 +529,28 @@ const SelfieSetup = (() => {
 
   function takePhoto() {
     if (!camOK || counting) return;
-    if (photoMode === 'front') currentFace = null;
-    else currentBack = null;
-    refreshShot();
+    // Limpiar completamente la foto anterior para que NADA se interponga ante la cámara en vivo
+    if (photoMode === 'front') {
+      currentFace = null;
+      rawFrontCanvas = null;
+    } else {
+      currentBack = null;
+      rawBackCanvas = null;
+    }
     counting = true;
-    btnPhoto.disabled = true;
+    if (btnPhoto) btnPhoto.disabled = true;
+
+    // Asegurar que el lienzo de la foto anterior quede oculto y limpio de inmediato
+    if (shot) {
+      shot.style.display = 'none';
+      const s = shot.getContext('2d');
+      if (s) s.clearRect(0, 0, shot.width, shot.height);
+    }
+    if (video) video.style.visibility = 'visible';
+    if (framingControls) framingControls.classList.add('hidden');
+    if (camBox) camBox.classList.remove('can-drag');
+
+    refreshShot();
 
     let n = 3;
     countdownEl.textContent = n;
@@ -537,6 +581,12 @@ const SelfieSetup = (() => {
     const strict = FaceCut.status === 'ready' && tries > 0;
     const r = FaceCut.fromVideo(video, !strict);
     if (!r) {
+      if (tries <= 0 || performance.now() >= deadline) {
+        counting = false;
+        if (camMsg) camMsg.textContent = 'No se pudo capturar la foto. Pulsa "Hacer foto" para intentarlo de nuevo.';
+        refreshShot();
+        return;
+      }
       setTimeout(() => captureWithRetry(tries - 1, deadline), 60);
       return;
     }
@@ -568,6 +618,8 @@ const SelfieSetup = (() => {
 
   function retake() {
     camMsg.textContent = '';
+    counting = false;
+    if (countdownEl) countdownEl.textContent = '';
     if (photoMode === 'front') {
       currentFace = null;
       rawFrontCanvas = null;
@@ -577,17 +629,31 @@ const SelfieSetup = (() => {
       rawBackCanvas = null;
       cropBack = { cx: 0.5, cy: 0.62, zoom: 1.35 };
     }
+    if (shot) {
+      shot.style.display = 'none';
+      const s = shot.getContext('2d');
+      if (s) s.clearRect(0, 0, shot.width, shot.height);
+    }
+    if (video) video.style.visibility = 'visible';
     updatePilotFrames();
     refreshShot();
   }
 
   function clearPhoto() {
+    counting = false;
+    if (countdownEl) countdownEl.textContent = '';
     currentFace = null;
     currentBack = null;
     rawFrontCanvas = null;
     rawBackCanvas = null;
     cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: false };
     cropBack = { cx: 0.5, cy: 0.62, zoom: 1.35 };
+    if (shot) {
+      shot.style.display = 'none';
+      const s = shot.getContext('2d');
+      if (s) s.clearRect(0, 0, shot.width, shot.height);
+    }
+    if (video) video.style.visibility = 'visible';
     FaceDriver.clearFace();
     playSfx('confirm');
     refreshShot();
