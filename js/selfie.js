@@ -452,6 +452,7 @@ const SelfieSetup = (() => {
       nameInput.placeholder = CHARACTERS[selectedChar].name.toUpperCase();
     }
     buildCharCards();
+    updateHeadgearButton();
     switchMode('front');
     root.classList.remove('hidden');
 
@@ -803,11 +804,34 @@ const SelfieSetup = (() => {
     pctx.fillText(ch.name.toUpperCase() + ' · ' + ch.type.toUpperCase(), cx, 40);
   }
 
+  function toggleHeadgear() {
+    if (typeof FaceDriver === 'undefined') return;
+    const current = FaceDriver.wearHeadgear;
+    FaceDriver.setWearHeadgear(!current);
+    updateHeadgearButton();
+    // Forzar reconstrucción de fotogramas del preview
+    SelfieSetup._lastFace = null;
+    const ch = CHARACTERS[selectedChar];
+    const faceToUse = currentFace || liveFace;
+    if (faceToUse) {
+      FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
+    }
+  }
+
+  function updateHeadgearButton() {
+    const btn = document.getElementById('selfieBtnToggleHeadgear');
+    if (!btn || typeof FaceDriver === 'undefined') return;
+    const isWearing = FaceDriver.wearHeadgear;
+    btn.textContent = isWearing ? '🧢 Accesorio: CON GORRA' : '🧑 Accesorio: SIN GORRA (CARA LIMPIA)';
+    btn.style.borderColor = isWearing ? '#00d2ff' : '#ffd700';
+  }
+
   return {
     initUI,
     open,
     close,
     switchMode,
+    toggleHeadgear,
     get currentFace() { return currentFace; },
     get currentBack() { return currentBack; }
   };

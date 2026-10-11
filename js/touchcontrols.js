@@ -22,10 +22,10 @@ const TouchControls = (() => {
 
   function isTouchDevice() {
     if (typeof window === 'undefined') return false;
-    return ('ontouchstart' in window) ||
-           (navigator.maxTouchPoints > 0) ||
-           (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
-           (window.innerWidth <= 960);
+    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const isSmall = window.innerWidth <= 820;
+    return (hasTouch && isCoarse) || (hasTouch && isSmall);
   }
 
   function vibrate(ms = 12) {
@@ -39,20 +39,16 @@ const TouchControls = (() => {
   function init() {
     if (typeof document === 'undefined') return;
 
-    // Detectar si el dispositivo es táctil o pantalla reducida
     if (isTouchDevice()) {
       document.body.classList.add('has-touch-controls');
       createUI();
     } else {
-      // Escuchar el primer toque por si se abre en pantalla táctil híbrida (ej. Surface / iPad / Chrome DevTools)
       const onFirstTouch = () => {
         document.body.classList.add('has-touch-controls');
         createUI();
         window.removeEventListener('touchstart', onFirstTouch);
-        window.removeEventListener('pointerdown', onFirstTouch);
       };
       window.addEventListener('touchstart', onFirstTouch, { passive: true, once: true });
-      window.addEventListener('pointerdown', onFirstTouch, { passive: true, once: true });
     }
   }
 
@@ -119,6 +115,7 @@ const TouchControls = (() => {
       window.addEventListener('pointermove', onJoyMove, { passive: false });
       window.addEventListener('pointerup', onJoyEnd, { passive: false });
       window.addEventListener('pointercancel', onJoyEnd, { passive: false });
+      leftZone.addEventListener('lostpointercapture', onJoyEnd, { passive: false });
     }
 
     // Manejo de los Botones de Acción Táctiles
@@ -130,6 +127,7 @@ const TouchControls = (() => {
       const press = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        try { btn.setPointerCapture(e.pointerId); } catch (err) {}
         btn.classList.add('active');
         vibrate(10);
         if (typeof Input !== 'undefined') {
@@ -144,6 +142,7 @@ const TouchControls = (() => {
       const release = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        try { btn.releasePointerCapture(e.pointerId); } catch (err) {}
         btn.classList.remove('active');
         if (typeof Input !== 'undefined') {
           Input.setVirtualButton(action, false);
@@ -153,7 +152,7 @@ const TouchControls = (() => {
       btn.addEventListener('pointerdown', press, { passive: false });
       btn.addEventListener('pointerup', release, { passive: false });
       btn.addEventListener('pointercancel', release, { passive: false });
-      btn.addEventListener('pointerleave', release, { passive: false });
+      btn.addEventListener('lostpointercapture', release, { passive: false });
     });
 
     active = true;
@@ -163,6 +162,10 @@ const TouchControls = (() => {
     if (joyActive) return;
     joyActive = true;
     joyPointerId = e.pointerId;
+    const leftZone = document.getElementById('touchZoneLeft');
+    if (leftZone) {
+      try { leftZone.setPointerCapture(e.pointerId); } catch (err) {}
+    }
 
     const rect = elJoyBase.getBoundingClientRect();
     joyOrigin = {
@@ -209,8 +212,14 @@ const TouchControls = (() => {
 
   function onJoyEnd(e) {
     if (!joyActive || (e && e.pointerId !== joyPointerId)) return;
+    const pId = joyPointerId;
     joyActive = false;
     joyPointerId = null;
+
+    const leftZone = document.getElementById('touchZoneLeft');
+    if (leftZone && pId !== null) {
+      try { leftZone.releasePointerCapture(pId); } catch (err) {}
+    }
 
     if (elJoyKnob) {
       elJoyKnob.style.transform = 'translate(0px, 0px)';

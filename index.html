@@ -36,18 +36,32 @@
     cursor: pointer;
   }
 
-  /* Barra superior con botones */
-  .top-bar {
+  /* Barra superior unificada y responsive */
+  .game-top-bar {
     position: fixed;
-    top: 12px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 10px;
+    left: 0;
+    width: 100%;
+    padding: 0 12px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 95;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .game-top-bar > * {
+    pointer-events: auto;
+  }
+  .top-left-controls {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .top-right-controls {
     display: flex;
     align-items: center;
-    gap: 12px;
-    z-index: 50;
-    pointer-events: auto;
-    transition: opacity 0.35s ease, transform 0.35s ease;
   }
   .btn-top-selfie {
     background: linear-gradient(180deg, #ffd700, #ff8800);
@@ -63,6 +77,9 @@
     transition: transform 0.15s, box-shadow 0.15s;
     outline: none;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
   .btn-top-selfie:hover {
     transform: scale(1.05);
@@ -71,60 +88,25 @@
   .btn-top-selfie:active {
     transform: scale(0.96);
   }
-  .btn-top-fullscreen {
-    background: linear-gradient(180deg, #00d2ff, #0055cc);
-    color: #fff;
-    font-weight: 900;
-    font-size: 13px;
-    letter-spacing: 0.8px;
-    padding: 8px 16px;
-    border: 3px solid #fff;
-    border-radius: 24px;
-    cursor: pointer;
-    box-shadow: 0 0 16px rgba(0, 180, 255, 0.8), 2px 2px 0 #000;
-    transition: transform 0.15s, box-shadow 0.15s;
-    outline: none;
-    white-space: nowrap;
-  }
-  .btn-top-fullscreen:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 24px rgba(0, 220, 255, 1), 2px 2px 0 #000;
-  }
-  .btn-top-aspect {
-    background: linear-gradient(180deg, #38ef7d, #11998e);
-    color: #fff;
-    font-weight: 900;
-    font-size: 13px;
-    letter-spacing: 0.8px;
-    padding: 8px 14px;
-    border: 3px solid #fff;
-    border-radius: 24px;
-    cursor: pointer;
-    box-shadow: 0 0 16px rgba(56, 239, 125, 0.7), 2px 2px 0 #000;
-    transition: transform 0.15s, box-shadow 0.15s;
-    outline: none;
-    white-space: nowrap;
-  }
-  .btn-top-aspect:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 24px rgba(56, 239, 125, 1), 2px 2px 0 #000;
+  .btn-selfie-mobile {
+    display: none;
   }
 
   /* Ocultar barra superior y ayuda en pantalla completa cuando esté inactivo */
-  body.is-fullscreen.ui-hidden .top-bar {
+  body.is-fullscreen.ui-hidden .game-top-bar {
     opacity: 0;
     pointer-events: none;
-    transform: translateX(-50%) translateY(-14px);
+    transform: translateY(-14px);
   }
   body.is-fullscreen.ui-hidden #hint {
     opacity: 0;
     pointer-events: none;
     transform: translateX(-50%) translateY(14px);
   }
-  .top-bar:hover {
+  .game-top-bar:hover {
     opacity: 1 !important;
     pointer-events: auto !important;
-    transform: translateX(-50%) translateY(0) !important;
+    transform: translateY(0) !important;
   }
 
   /* Barra de ayuda inferior */
@@ -202,12 +184,8 @@
     letter-spacing: 0.5px;
   }
   .top-left-controls {
-    position: fixed;
-    top: 10px;
-    left: 12px;
-    z-index: 95;
     display: flex;
-    gap: 8px;
+    gap: 7px;
     align-items: center;
   }
   .btn-ctrl {
@@ -247,6 +225,34 @@
   .btn-ctrl-donut:hover {
     border-color: #ffd700;
     box-shadow: 0 0 18px rgba(255, 215, 0, 0.8);
+  }
+
+  @media (max-width: 600px) {
+    .btn-ctrl {
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
+    }
+    .btn-ctrl-donut img {
+      width: 22px !important;
+      height: 22px !important;
+    }
+    .btn-selfie-full { display: none; }
+    .btn-selfie-mobile { display: inline-block; font-size: 11px; }
+    .btn-top-selfie {
+      padding: 6px 12px;
+      font-size: 11px;
+    }
+  }
+
+  /* Ajuste visual en móviles portrait (Samsung Galaxy S24 Ultra, etc.): el juego queda centrado arriba bajo la barra */
+  @media (max-width: 900px) and (orientation: portrait), (hover: none) and (pointer: coarse) and (orientation: portrait) {
+    #wrap {
+      align-items: flex-start !important;
+    }
+    canvas#game {
+      margin-top: 56px !important;
+    }
   }
 
   /* ============================================================
@@ -361,13 +367,45 @@
     color: #000;
   }
 
-  /* Zona Derecha: Botonera Diamante Arcade */
+  /* Zona Central: Start / Menú */
+  .touch-zone-center {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    z-index: 20;
+  }
+  .touch-btn-pill {
+    background: rgba(16, 20, 36, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 2px solid rgba(255, 215, 0, 0.65);
+    border-radius: 20px;
+    color: #ffd700;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    padding: 5px 14px;
+    cursor: pointer;
+    touch-action: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+    outline: none;
+    white-space: nowrap;
+  }
+  .touch-btn-pill.active {
+    transform: scale(0.94);
+    background: #ffd700;
+    color: #000;
+  }
+
+  /* Zona Derecha: Botonera Diamante Arcade (Ergonomía optimizada sin solapamiento) */
   .touch-zone-right {
     position: absolute;
-    bottom: 16px;
-    right: 16px;
-    width: 180px;
-    height: 180px;
+    bottom: 12px;
+    right: 10px;
+    width: 156px;
+    height: 156px;
     pointer-events: auto;
     touch-action: none;
   }
@@ -392,24 +430,24 @@
   }
 
   .touch-btn .btn-lbl {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 900;
     line-height: 1.1;
     color: #fff;
     text-shadow: 0 1px 3px #000;
   }
   .touch-btn .btn-sub {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 800;
     opacity: 0.85;
     color: #fff;
     text-shadow: 0 1px 2px #000;
   }
 
-  /* GAS (A - Abajo Derecha) */
+  /* GAS (A - Abajo Derecha - Principal) */
   .btn-gas {
-    width: 70px;
-    height: 70px;
+    width: 64px;
+    height: 64px;
     bottom: 0px;
     right: 0px;
     background: radial-gradient(circle at 35% 35%, #2ed573, #10ac84 75%, #05664a 100%);
@@ -418,19 +456,19 @@
 
   /* SALTO / DERRAPE (R - Arriba Derecha) */
   .btn-drift {
-    width: 60px;
-    height: 60px;
+    width: 52px;
+    height: 52px;
     top: 0px;
-    right: 12px;
+    right: 10px;
     background: radial-gradient(circle at 35% 35%, #00d2ff, #0077ff 75%, #003e99 100%);
     box-shadow: 0 0 15px rgba(0, 210, 255, 0.75), 0 5px 14px rgba(0, 0, 0, 0.8);
   }
 
   /* ITEM (L - Arriba Izquierda) */
   .btn-item {
-    width: 58px;
-    height: 58px;
-    top: 14px;
+    width: 48px;
+    height: 48px;
+    top: 10px;
     left: 8px;
     background: radial-gradient(circle at 35% 35%, #ffd32a, #ff9f1a 75%, #b36b00 100%);
     box-shadow: 0 0 15px rgba(255, 211, 42, 0.75), 0 5px 14px rgba(0, 0, 0, 0.8);
@@ -438,10 +476,10 @@
 
   /* FRENO (B - Abajo Izquierda) */
   .btn-brake {
-    width: 56px;
-    height: 56px;
-    bottom: 10px;
-    left: 18px;
+    width: 48px;
+    height: 48px;
+    bottom: 6px;
+    left: 10px;
     background: radial-gradient(circle at 35% 35%, #ff4757, #c0392b 75%, #7a1f16 100%);
     box-shadow: 0 0 14px rgba(255, 71, 87, 0.75), 0 5px 14px rgba(0, 0, 0, 0.8);
   }
@@ -897,17 +935,22 @@
 </style>
 </head>
 <body>
-<div class="top-left-controls">
-  <button id="btnDonutBadge" class="btn-ctrl btn-ctrl-donut" title="Acerca de mr_d0nuT" aria-label="mr_d0nuT">
-    <img id="imgDonutIcon" alt="dOnuT" style="width:26px;height:26px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">
-  </button>
-  <button id="btnAudioToggle" class="btn-ctrl" onclick="Sound.toggleMute()" title="Activar / Desactivar Sonido (M)" aria-label="Audio">🔊</button>
-  <button id="btnFullscreenToggle" class="btn-ctrl" onclick="Game.toggleFullscreen()" title="Pantalla Completa (F)" aria-label="Pantalla Completa">⛶</button>
-  <button id="btnToggleAspect" class="btn-ctrl" onclick="Game.toggleAspectMode()" title="Formato de Pantalla (4:3 / 16:9 / 8:7)" aria-label="Proporción">📺</button>
-</div>
+<div class="game-top-bar" id="topBar">
+  <div class="top-left-controls">
+    <button id="btnDonutBadge" class="btn-ctrl btn-ctrl-donut" title="Acerca de mr_d0nuT" aria-label="mr_d0nuT">
+      <img id="imgDonutIcon" alt="dOnuT" style="width:24px;height:24px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">
+    </button>
+    <button id="btnAudioToggle" class="btn-ctrl" onclick="Sound.toggleMute()" title="Activar / Desactivar Sonido (M)" aria-label="Audio">🔊</button>
+    <button id="btnFullscreenToggle" class="btn-ctrl" onclick="Game.toggleFullscreen()" title="Pantalla Completa (F)" aria-label="Pantalla Completa">⛶</button>
+    <button id="btnToggleAspect" class="btn-ctrl" onclick="Game.toggleAspectMode()" title="Formato de Pantalla (4:3 / 16:9 / 8:7)" aria-label="Proporción">📺</button>
+  </div>
 
-<div class="top-bar" id="topBar">
-  <button id="btnFloatingSelfie" class="btn-top-selfie" onclick="SelfieSetup.open()">📸 HAZTE UN SELFIE / TU CARA</button>
+  <div class="top-right-controls">
+    <button id="btnFloatingSelfie" class="btn-top-selfie" onclick="SelfieSetup.open()">
+      <span class="btn-selfie-full">📸 HAZTE UN SELFIE / TU CARA</span>
+      <span class="btn-selfie-mobile">📸 TU CARA</span>
+    </button>
+  </div>
 </div>
 
 <div id="wrap">
@@ -1005,6 +1048,10 @@
         </div>
 
         <div id="selfieCharGrid" class="char-grid"></div>
+
+        <button id="selfieBtnToggleHeadgear" type="button" class="smk-btn" style="width:100%; margin:6px 0; font-size:12px; font-weight:800; letter-spacing:0.5px;" onclick="SelfieSetup.toggleHeadgear()">
+          🧢 Accesorio: CON GORRA
+        </button>
 
         <div class="name-input-group">
           <span>PILOTO:</span>

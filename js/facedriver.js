@@ -17,9 +17,13 @@ const FaceDriver = (() => {
   let pilotName = 'MARIO';
   let charIdx = 0;               // 0 = Mario
   const customDriving = {};      // charIdx -> Array de 12 Canvas (256x256 alta definición)
-  let minimapIcon = null;        // Canvas 64x64 alta definición
   let podiumFace = null;         // Canvas 256x256 alta definición
   let _lastFaceToken = null;
+  let wearHeadgear = true;
+  try {
+    const savedHat = localStorage.getItem('smk_wear_headgear');
+    if (savedHat !== null) wearHeadgear = (savedHat === '1');
+  } catch (e) {}
 
   // Paleta auténtica y accesorios para los 8 personajes
   const CHAR_THEMES = [
@@ -136,6 +140,8 @@ const FaceDriver = (() => {
 
   /* Renderizado del accesorio/gorra de alta definición para los 8 personajes */
   function drawHeadgear(ctx, characterIndex, frameIdx, cx, cy, hw, hh, yaw = 0) {
+    if (!wearHeadgear) return; // Si el usuario eligió "Sin Gorra", ¡rostro y pelo 100% despejados!
+
     const theme = CHAR_THEMES[characterIndex] || CHAR_THEMES[0];
     const isFront = frameIdx >= 8 && frameIdx <= 11;
     const isRear = frameIdx === 0;
@@ -145,7 +151,7 @@ const FaceDriver = (() => {
     ctx.save();
 
     // ----------------------------------------------------
-    // 1. MARIO & LUIGI (Gorras con Visera y Emblema Circular)
+    // 1. MARIO & LUIGI (Gorra de Visera Clásica colocada sobre la frente/coronilla)
     // ----------------------------------------------------
     if (theme.name === 'mario' || theme.name === 'luigi') {
       const capCol = theme.capColor;
@@ -153,12 +159,12 @@ const FaceDriver = (() => {
       const capLight = theme.capLight;
 
       // Desplazamiento en perspectiva según yaw
-      const yawOffX = Math.sin(yaw) * (hw * 0.22);
+      const yawOffX = Math.sin(yaw) * (hw * 0.18);
 
-      // Cúpula abullonada de la gorra (Crown)
-      const crownY = cy - hh * 0.32;
-      const crownW = hw * 0.56;
-      const crownH = hh * 0.42;
+      // Cúpula abullonada de la gorra (Crown) situada arriba en la coronilla
+      const crownY = cy - hh * 0.44;
+      const crownW = hw * 0.45;
+      const crownH = hh * 0.22;
 
       const cGrad = ctx.createRadialGradient(cx + yawOffX - crownW * 0.2, crownY - crownH * 0.2, crownW * 0.1, cx + yawOffX, crownY, crownW);
       cGrad.addColorStop(0, capLight);
@@ -166,50 +172,49 @@ const FaceDriver = (() => {
       cGrad.addColorStop(1, capDark);
       ctx.fillStyle = cGrad;
       ctx.beginPath();
-      ctx.ellipse(cx + yawOffX, crownY, crownW, crownH, yaw * 0.2, 0, Math.PI * 2);
+      ctx.ellipse(cx + yawOffX, crownY, crownW, crownH, yaw * 0.15, 0, Math.PI * 2);
       ctx.fill();
 
       // Pliegues superiores de tela
       ctx.strokeStyle = adjustColor(capDark, 0.85);
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.arc(cx + yawOffX, crownY, crownW * 0.75, Math.PI * 0.8, Math.PI * 1.4);
       ctx.stroke();
 
-      // Visera / Ala de la gorra
+      // Visera / Ala de la gorra (termina por encima de las cejas, dejando ojos y rostro 100% visibles)
       if (isFront) {
-        // En vista frontal: visera curvada cayendo sobre la frente con sombra fotorrealista
-        const visorY = cy - hh * 0.16;
-        const visorW = hw * 0.50;
-        const visorH = hh * 0.16;
+        const visorY = cy - hh * 0.30;
+        const visorW = hw * 0.44;
+        const visorH = hh * 0.08;
 
-        // Sombra proyectada por la visera sobre la frente
-        const shadowGrad = ctx.createLinearGradient(0, visorY, 0, visorY + hh * 0.25);
-        shadowGrad.addColorStop(0, 'rgba(0,0,0,0.50)');
+        // Sombra sutil en la parte alta de la frente
+        const shadowGrad = ctx.createLinearGradient(0, visorY, 0, visorY + hh * 0.07);
+        shadowGrad.addColorStop(0, 'rgba(0,0,0,0.30)');
         shadowGrad.addColorStop(1, 'rgba(0,0,0,0.0)');
         ctx.fillStyle = shadowGrad;
         ctx.beginPath();
-        ctx.ellipse(cx + yawOffX, visorY + 6, visorW * 0.95, visorH * 1.5, 0, 0, Math.PI);
+        ctx.ellipse(cx + yawOffX, visorY + 3, visorW * 0.95, visorH * 1.2, 0, 0, Math.PI);
         ctx.fill();
 
-        // Visera roja con borde biselado brillante
+        // Visera curvada estilizada
         const vGrad = ctx.createLinearGradient(cx - visorW, visorY - visorH, cx + visorW, visorY + visorH);
         vGrad.addColorStop(0, capLight);
         vGrad.addColorStop(0.6, capCol);
         vGrad.addColorStop(1, capDark);
         ctx.fillStyle = vGrad;
         ctx.beginPath();
-        ctx.ellipse(cx + yawOffX, visorY, visorW, visorH, yaw * 0.15, 0, Math.PI);
+        ctx.ellipse(cx + yawOffX, visorY, visorW, visorH, yaw * 0.12, 0, Math.PI);
         ctx.fill();
 
         ctx.strokeStyle = capLight;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
 
-        // Emblema circular blanco con letra 'M' o 'L'
-        const embR = hw * 0.15;
-        const embX = cx + yawOffX * 1.1;
-        const embY = crownY + crownH * 0.08;
+        // Emblema circular blanco con letra 'M' o 'L' en la parte frontal de la cúpula
+        const embR = hw * 0.105;
+        const embX = cx + yawOffX * 1.05;
+        const embY = crownY;
 
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
@@ -220,58 +225,58 @@ const FaceDriver = (() => {
         ctx.stroke();
 
         ctx.fillStyle = theme.emblemColor || capCol;
-        ctx.font = `900 ${Math.round(embR * 1.5)}px sans-serif`;
+        ctx.font = `900 ${Math.round(embR * 1.45)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(theme.emblem, embX, embY + 1);
       } else if (isTurn) {
-        // Vista de giro: visera sobresaliendo en perspectiva hacia el vértice de la curva
-        const vTurnX = cx + yawOffX + (hw * 0.18);
-        const vTurnY = cy - hh * 0.18;
+        // Vista de giro
+        const vTurnX = cx + yawOffX + (hw * 0.15);
+        const vTurnY = cy - hh * 0.32;
         ctx.fillStyle = capDark;
         ctx.beginPath();
-        ctx.ellipse(vTurnX, vTurnY, hw * 0.35, hh * 0.14, yaw * 0.35, 0, Math.PI * 2);
+        ctx.ellipse(vTurnX, vTurnY, hw * 0.30, hh * 0.08, yaw * 0.25, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = capLight;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
       } else if (isSide) {
-        // Vista lateral: perfil de visera extendiéndose horizontalmente
-        const vSideX = cx + (hw * 0.28);
-        const vSideY = cy - hh * 0.14;
+        // Vista lateral
+        const vSideX = cx + (hw * 0.22);
+        const vSideY = cy - hh * 0.30;
         ctx.fillStyle = capCol;
         ctx.beginPath();
-        ctx.ellipse(vSideX, vSideY, hw * 0.30, hh * 0.10, 0.15, 0, Math.PI * 2);
+        ctx.ellipse(vSideX, vSideY, hw * 0.26, hh * 0.07, 0.12, 0, Math.PI * 2);
         ctx.fill();
       } else if (isRear) {
-        // Vista trasera recta: banda elástica posterior con pliegues
-        const bandY = cy - hh * 0.12;
+        // Vista trasera recta: banda posterior
+        const bandY = cy - hh * 0.28;
         ctx.fillStyle = capDark;
         ctx.beginPath();
-        ctx.ellipse(cx, bandY, hw * 0.44, hh * 0.10, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, bandY, hw * 0.40, hh * 0.08, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = adjustColor(capDark, 0.7);
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
       }
     }
     // ----------------------------------------------------
-    // 2. PRINCESS PEACH (Corona Real de Oro con Gemas y Mechones)
+    // 2. PRINCESS PEACH (Corona Real de Oro sobre la Coronilla)
     // ----------------------------------------------------
     else if (theme.isCrown) {
-      const crY = cy - hh * 0.44;
-      const crW = hw * 0.38;
-      const crH = hh * 0.30;
-      const yawOffX = Math.sin(yaw) * (hw * 0.15);
+      const crY = cy - hh * 0.52;
+      const crW = hw * 0.32;
+      const crH = hh * 0.20;
+      const yawOffX = Math.sin(yaw) * (hw * 0.12);
 
-      // Mechones de pelo rubio realzando la corona
+      // Mechones dorados sobre la coronilla
       ctx.fillStyle = '#f8e060';
       ctx.beginPath();
-      ctx.ellipse(cx - crW * 0.9, crY + crH * 0.8, hw * 0.14, hh * 0.22, -0.3, 0, Math.PI * 2);
-      ctx.ellipse(cx + crW * 0.9, crY + crH * 0.8, hw * 0.14, hh * 0.22, 0.3, 0, Math.PI * 2);
+      ctx.ellipse(cx - crW * 0.9, crY + crH * 0.8, hw * 0.12, hh * 0.16, -0.3, 0, Math.PI * 2);
+      ctx.ellipse(cx + crW * 0.9, crY + crH * 0.8, hw * 0.12, hh * 0.16, 0.3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Corona de oro pulido con gradiente metálico
+      // Corona de oro pulido
       const goldGrad = ctx.createLinearGradient(cx - crW, crY - crH, cx + crW, crY + crH);
       goldGrad.addColorStop(0, '#fff494');
       goldGrad.addColorStop(0.35, '#ffd700');
@@ -283,43 +288,31 @@ const FaceDriver = (() => {
       ctx.moveTo(cx + yawOffX - crW * 0.7, crY + crH);
       ctx.lineTo(cx + yawOffX - crW * 0.9, crY - crH * 0.4);
       ctx.lineTo(cx + yawOffX - crW * 0.35, crY + crH * 0.3);
-      ctx.lineTo(cx + yawOffX, crY - crH * 0.9); // Punta central alta
+      ctx.lineTo(cx + yawOffX, crY - crH * 0.9);
       ctx.lineTo(cx + yawOffX + crW * 0.35, crY + crH * 0.3);
       ctx.lineTo(cx + yawOffX + crW * 0.9, crY - crH * 0.4);
       ctx.lineTo(cx + yawOffX + crW * 0.7, crY + crH);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = '#fff8b3';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.8;
       ctx.stroke();
 
-      // Rubí central brillante
+      // Rubí central
       ctx.fillStyle = '#e52521';
       ctx.beginPath();
       ctx.ellipse(cx + yawOffX, crY + crH * 0.4, crW * 0.16, crH * 0.25, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(cx + yawOffX - 2, crY + crH * 0.35, 2, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Zafiros laterales
-      ctx.fillStyle = '#1e88e5';
-      ctx.beginPath();
-      ctx.arc(cx + yawOffX - crW * 0.5, crY + crH * 0.45, 3.5, 0, Math.PI * 2);
-      ctx.arc(cx + yawOffX + crW * 0.5, crY + crH * 0.45, 3.5, 0, Math.PI * 2);
-      ctx.fill();
     }
     // ----------------------------------------------------
-    // 3. TOAD (Sombrero Champiñón Blanco con Grandes Lunares Rojos)
+    // 3. TOAD (Sombrero Champiñón Blanco con Lunares sobre la Cabeza)
     // ----------------------------------------------------
     else if (theme.isToad) {
-      const mushY = cy - hh * 0.38;
-      const mushW = hw * 0.65;
-      const mushH = hh * 0.48;
-      const yawOffX = Math.sin(yaw) * (hw * 0.18);
+      const mushY = cy - hh * 0.46;
+      const mushW = hw * 0.52;
+      const mushH = hh * 0.26;
+      const yawOffX = Math.sin(yaw) * (hw * 0.14);
 
-      // Cúpula del champiñón blanca con volumen 3D
       const mGrad = ctx.createRadialGradient(cx + yawOffX - mushW * 0.2, mushY - mushH * 0.2, mushW * 0.1, cx + yawOffX, mushY, mushW);
       mGrad.addColorStop(0, '#ffffff');
       mGrad.addColorStop(0.75, '#f0f0f5');
@@ -329,70 +322,64 @@ const FaceDriver = (() => {
       ctx.ellipse(cx + yawOffX, mushY, mushW, mushH, yaw * 0.1, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#a0a0b0';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.8;
       ctx.stroke();
 
-      // Lunares rojos grandes icónicos
+      // Lunares rojos
       ctx.fillStyle = '#d32f2f';
-      // Lunar central
       ctx.beginPath();
-      ctx.ellipse(cx + yawOffX, mushY - mushH * 0.25, mushW * 0.32, mushH * 0.38, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Lunares laterales
-      ctx.beginPath();
-      ctx.ellipse(cx + yawOffX - mushW * 0.72, mushY + mushH * 0.1, mushW * 0.25, mushH * 0.35, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + yawOffX, mushY - mushH * 0.2, mushW * 0.30, mushH * 0.35, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.ellipse(cx + yawOffX + mushW * 0.72, mushY + mushH * 0.1, mushW * 0.25, mushH * 0.35, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + yawOffX - mushW * 0.65, mushY + mushH * 0.1, mushW * 0.22, mushH * 0.30, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + yawOffX + mushW * 0.65, mushY + mushH * 0.1, mushW * 0.22, mushH * 0.30, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     // ----------------------------------------------------
-    // 4. BOWSER (Cuernos de Marfil y Cresta Ígnea)
+    // 4. BOWSER (Cuernos de Marfil y Cresta Superior)
     // ----------------------------------------------------
     else if (theme.isBowser) {
-      const crY = cy - hh * 0.35;
-      const yawOffX = Math.sin(yaw) * (hw * 0.15);
+      const crY = cy - hh * 0.48;
+      const yawOffX = Math.sin(yaw) * (hw * 0.12);
 
-      // Cresta de pelo naranja de fuego
       ctx.fillStyle = '#e65100';
-      for (let s = -3; s <= 3; s++) {
+      for (let s = -2; s <= 2; s++) {
         ctx.beginPath();
-        ctx.moveTo(cx + yawOffX + s * (hw * 0.08), crY + hh * 0.1);
-        ctx.lineTo(cx + yawOffX + s * (hw * 0.10), crY - hh * 0.35 - Math.abs(s) * 4);
-        ctx.lineTo(cx + yawOffX + s * (hw * 0.08) + 12, crY + hh * 0.1);
+        ctx.moveTo(cx + yawOffX + s * (hw * 0.08), crY + hh * 0.08);
+        ctx.lineTo(cx + yawOffX + s * (hw * 0.09), crY - hh * 0.22 - Math.abs(s) * 3);
+        ctx.lineTo(cx + yawOffX + s * (hw * 0.08) + 10, crY + hh * 0.08);
         ctx.fill();
       }
 
-      // Cuernos laterales de marfil curvados
-      const hornGrad = ctx.createLinearGradient(cx - hw * 0.5, crY, cx + hw * 0.5, crY - hh * 0.3);
+      // Cuernos laterales
+      const hornGrad = ctx.createLinearGradient(cx - hw * 0.45, crY, cx + hw * 0.45, crY - hh * 0.2);
       hornGrad.addColorStop(0, '#fff8e7');
       hornGrad.addColorStop(0.7, '#d7ccc8');
       hornGrad.addColorStop(1, '#5d4037');
       ctx.fillStyle = hornGrad;
 
-      // Cuerno izquierdo
       ctx.beginPath();
-      ctx.moveTo(cx + yawOffX - hw * 0.32, crY + 5);
-      ctx.quadraticCurveTo(cx + yawOffX - hw * 0.65, crY - hh * 0.1, cx + yawOffX - hw * 0.58, crY - hh * 0.45);
-      ctx.quadraticCurveTo(cx + yawOffX - hw * 0.40, crY - hh * 0.2, cx + yawOffX - hw * 0.26, crY + 8);
+      ctx.moveTo(cx + yawOffX - hw * 0.28, crY + 5);
+      ctx.quadraticCurveTo(cx + yawOffX - hw * 0.55, crY - hh * 0.08, cx + yawOffX - hw * 0.50, crY - hh * 0.35);
+      ctx.quadraticCurveTo(cx + yawOffX - hw * 0.35, crY - hh * 0.15, cx + yawOffX - hw * 0.22, crY + 8);
       ctx.fill();
 
-      // Cuerno derecho
       ctx.beginPath();
-      ctx.moveTo(cx + yawOffX + hw * 0.32, crY + 5);
-      ctx.quadraticCurveTo(cx + yawOffX + hw * 0.65, crY - hh * 0.1, cx + yawOffX + hw * 0.58, crY - hh * 0.45);
-      ctx.quadraticCurveTo(cx + yawOffX + hw * 0.40, crY - hh * 0.2, cx + yawOffX + hw * 0.26, crY + 8);
+      ctx.moveTo(cx + yawOffX + hw * 0.28, crY + 5);
+      ctx.quadraticCurveTo(cx + yawOffX + hw * 0.55, crY - hh * 0.08, cx + yawOffX + hw * 0.50, crY - hh * 0.35);
+      ctx.quadraticCurveTo(cx + yawOffX + hw * 0.35, crY - hh * 0.15, cx + yawOffX + hw * 0.22, crY + 8);
       ctx.fill();
     }
     // ----------------------------------------------------
-    // 5. KOOPA TROOPA (Casco Caparazón Verde con Borde Dorado)
+    // 5. KOOPA TROOPA (Casco Caparazón Verde Superior)
     // ----------------------------------------------------
     else if (theme.isKoopa) {
-      const kY = cy - hh * 0.30;
-      const kW = hw * 0.54;
-      const kH = hh * 0.38;
+      const kY = cy - hh * 0.44;
+      const kW = hw * 0.46;
+      const kH = hh * 0.20;
 
-      // Cúpula caparazón verde
       const kGrad = ctx.createRadialGradient(cx - kW * 0.2, kY - kH * 0.2, kW * 0.1, cx, kY, kW);
       kGrad.addColorStop(0, '#4caf50');
       kGrad.addColorStop(0.65, '#2e7d32');
@@ -402,69 +389,58 @@ const FaceDriver = (() => {
       ctx.ellipse(cx, kY, kW, kH, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Borde amarillo/dorado
       ctx.strokeStyle = '#fbc02d';
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
       ctx.ellipse(cx, kY + kH * 0.5, kW * 0.95, kH * 0.35, 0, 0, Math.PI);
       ctx.stroke();
     }
     // ----------------------------------------------------
-    // 6. YOSHI (Capucha Dino Verde con Ojos Saltones y Cresta)
+    // 6. YOSHI (Capucha Dino Verde Superior)
     // ----------------------------------------------------
     else if (theme.isYoshi) {
-      const yY = cy - hh * 0.32;
-      const yW = hw * 0.52;
-      const yH = hh * 0.40;
+      const yY = cy - hh * 0.48;
+      const yW = hw * 0.44;
+      const yH = hh * 0.20;
 
-      // Cresta verde de dinosaurio
       ctx.fillStyle = '#43a047';
       ctx.beginPath();
       ctx.ellipse(cx, yY, yW, yH, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Ojos saltones de dibujo animado encima de la cabeza
+      // Ojos saltones arriba
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(cx - yW * 0.45, yY - yH * 0.6, yW * 0.32, yH * 0.38, -0.2, 0, Math.PI * 2);
-      ctx.ellipse(cx + yW * 0.45, yY - yH * 0.6, yW * 0.32, yH * 0.38, 0.2, 0, Math.PI * 2);
+      ctx.ellipse(cx - yW * 0.42, yY - yH * 0.45, yW * 0.28, yH * 0.32, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(cx + yW * 0.42, yY - yH * 0.45, yW * 0.28, yH * 0.32, 0.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#2e7d32';
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Pupilas negras
       ctx.fillStyle = '#101018';
       ctx.beginPath();
-      ctx.ellipse(cx - yW * 0.45 + 3, yY - yH * 0.55, 4, 6, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + yW * 0.45 - 3, yY - yH * 0.55, 4, 6, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Cresta de espinas naranja
-      ctx.fillStyle = '#ff5722';
-      ctx.beginPath();
-      ctx.ellipse(cx, yY - yH * 0.85, 7, 12, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx - yW * 0.42 + 2, yY - yH * 0.40, 3.5, 5, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + yW * 0.42 - 2, yY - yH * 0.40, 3.5, 5, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     // ----------------------------------------------------
-    // 7. DONKEY KONG (Remolino de Pelo Castaño y Corbata DK)
+    // 7. DONKEY KONG (Remolino de Pelo Castaño Superior)
     // ----------------------------------------------------
     else if (theme.isDK) {
-      const dkY = cy - hh * 0.35;
-      const dkW = hw * 0.52;
+      const dkY = cy - hh * 0.48;
+      const dkW = hw * 0.42;
 
-      // Pelo castaño espeso
       ctx.fillStyle = '#5d4037';
       ctx.beginPath();
-      ctx.ellipse(cx, dkY, dkW, hh * 0.38, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, dkY, dkW, hh * 0.20, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Mechón icónico puntiagudo de DK en la coronilla
       ctx.fillStyle = '#3e2723';
       ctx.beginPath();
-      ctx.moveTo(cx - 16, dkY - hh * 0.25);
-      ctx.quadraticCurveTo(cx, dkY - hh * 0.65, cx + 18, dkY - hh * 0.55);
-      ctx.quadraticCurveTo(cx + 8, dkY - hh * 0.30, cx + 14, dkY - hh * 0.20);
+      ctx.moveTo(cx - 14, dkY - hh * 0.15);
+      ctx.quadraticCurveTo(cx, dkY - hh * 0.45, cx + 15, dkY - hh * 0.38);
+      ctx.quadraticCurveTo(cx + 6, dkY - hh * 0.20, cx + 12, dkY - hh * 0.12);
       ctx.fill();
     }
 
@@ -850,6 +826,16 @@ const FaceDriver = (() => {
     get charIdx() { return charIdx; },
     get minimapIcon() { return minimapIcon; },
     get podiumFace() { return podiumFace; },
-    get themes() { return CHAR_THEMES; }
+    get themes() { return CHAR_THEMES; },
+    get wearHeadgear() { return wearHeadgear; },
+    setWearHeadgear(val) {
+      wearHeadgear = !!val;
+      try { localStorage.setItem('smk_wear_headgear', wearHeadgear ? '1' : '0'); } catch (e) {}
+      Object.keys(customDriving).forEach(k => delete customDriving[k]);
+      if (userFaceCanvas) {
+        minimapIcon = buildMinimapIcon(charIdx);
+        podiumFace = buildPodiumFace(charIdx);
+      }
+    }
   };
 })();
