@@ -624,16 +624,22 @@
     border: 3px solid #ffd700;
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.9);
   }
-  .selfie-cam-box video,
+  .selfie-cam-box video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    z-index: 2;
+  }
   .selfie-cam-box canvas#selfieShot {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-  }
-  .selfie-cam-box video {
-    transform: scaleX(-1);
+    z-index: 5;
   }
   .selfie-oval {
     position: absolute;
@@ -643,6 +649,7 @@
     border: 3px dashed rgba(255, 255, 255, 0.85);
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.42);
     pointer-events: none;
+    z-index: 8;
   }
   #selfieCountdown {
     position: absolute;
@@ -655,6 +662,7 @@
     color: #ffea00;
     text-shadow: 4px 4px 0 #d81818, 0 0 25px #000;
     pointer-events: none;
+    z-index: 12;
   }
   #selfieFlash {
     position: absolute;
@@ -663,6 +671,7 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.08s;
+    z-index: 15;
   }
   #selfieFlash.flash-on { opacity: 0.95; }
 
@@ -676,6 +685,7 @@
     border-radius: 6px;
     text-align: center;
     pointer-events: none;
+    z-index: 20;
   }
 
   .selfie-face-status {
@@ -1006,7 +1016,7 @@
         </div>
 
         <div class="selfie-cam-box" id="selfieCamBox">
-          <video id="selfieVideo" autoplay playsinline muted></video>
+          <video id="selfieVideo" autoplay playsinline webkit-playsinline muted></video>
           <canvas id="selfieShot" width="320" height="320" style="display:none;"></canvas>
           <div class="selfie-oval"></div>
           <div id="selfieCountdown"></div>

@@ -420,7 +420,14 @@ const SelfieSetup = (() => {
       });
       if (!active) { stopCamera(); return; }
       video.srcObject = stream;
-      await video.play().catch(() => {});
+      if (liveView) {
+        video.style.display = 'block';
+        video.style.visibility = 'visible';
+        await video.play().catch(() => {});
+      } else {
+        video.style.display = 'none';
+        video.style.visibility = 'hidden';
+      }
       camOK = true;
       camMsg.textContent = '';
     } catch (e) {
@@ -436,7 +443,10 @@ const SelfieSetup = (() => {
       stream = null;
     }
     camOK = false;
-    if (video) video.srcObject = null;
+    if (video) {
+      try { video.pause(); } catch (e) {}
+      video.srcObject = null;
+    }
   }
 
   function open(cb) {
@@ -444,17 +454,19 @@ const SelfieSetup = (() => {
     if (!root) return;
     onDoneCallback = cb;
     active = true;
-    selectedChar = Game.playerChar || 0;
+    selectedChar = (typeof Game !== 'undefined' && typeof Game.playerChar === 'number') ? Game.playerChar : 0;
     currentFace = FaceDriver.faceCanvas;
     currentBack = FaceDriver.backCanvas;
     if (!rawFrontCanvas && currentFace) rawFrontCanvas = currentFace;
     if (!rawBackCanvas && currentBack) rawBackCanvas = currentBack;
     photoMode = 'front';
-    liveView = true; // Por defecto siempre muestra la cámara en vivo limpia para enfocar y disparar
+    liveView = !currentFace; // Si ya hay foto previa guardada, arrancar viéndola; si no, cámara en vivo
 
     if (nameInput) {
       nameInput.value = FaceDriver.active ? FaceDriver.pilotName : '';
-      nameInput.placeholder = CHARACTERS[selectedChar].name.toUpperCase();
+      if (typeof CHARACTERS !== 'undefined' && CHARACTERS[selectedChar]) {
+        nameInput.placeholder = CHARACTERS[selectedChar].name.toUpperCase();
+      }
     }
     buildCharCards();
     updateHeadgearButton();
@@ -488,14 +500,28 @@ const SelfieSetup = (() => {
 
     if (shot) {
       shot.style.display = hasCaptured ? 'block' : 'none';
-      if (!hasCaptured) {
+      if (hasCaptured) {
+        drawFramedShot();
+      } else {
         const s = shot.getContext('2d');
         if (s) s.clearRect(0, 0, shot.width, shot.height);
       }
     }
+
     if (video) {
-      video.style.visibility = hasCaptured ? 'hidden' : 'visible';
+      if (hasCaptured) {
+        try { video.pause(); } catch (e) {}
+        video.style.display = 'none';
+        video.style.visibility = 'hidden';
+      } else {
+        video.style.display = 'block';
+        video.style.visibility = 'visible';
+        if (camOK && active) {
+          try { video.play().catch(() => {}); } catch (e) {}
+        }
+      }
     }
+
     const oval = root ? root.querySelector('.selfie-oval') : null;
     if (oval) oval.style.display = 'block';
 
@@ -510,10 +536,6 @@ const SelfieSetup = (() => {
     }
     if (camBox) {
       camBox.classList.toggle('can-drag', !!(hasCaptured && raw));
-    }
-
-    if (hasCaptured) {
-      drawFramedShot();
     }
 
     // Actualizar insignias de fotos listas
@@ -532,12 +554,18 @@ const SelfieSetup = (() => {
 
   function updatePilotFrames() {
     _lastFace = null;
-    if (currentFace) {
-      const name = nameInput && nameInput.value.trim() ? nameInput.value.trim() : CHARACTERS[selectedChar].name;
-      FaceDriver.setFace(currentFace, currentBack, selectedChar, name, false);
-      if (previewAnim) {
-        FaceDriver.applyToAnimator(previewAnim, selectedChar);
+    try {
+      if (currentFace) {
+        const ch = (typeof CHARACTERS !== 'undefined' && CHARACTERS[selectedChar]) ? CHARACTERS[selectedChar] : null;
+        const defaultName = ch ? ch.name : 'PILOTO';
+        const name = nameInput && nameInput.value.trim() ? nameInput.value.trim() : defaultName;
+        FaceDriver.setFace(currentFace, currentBack, selectedChar, name, false);
+        if (previewAnim) {
+          FaceDriver.applyToAnimator(previewAnim, selectedChar);
+        }
       }
+    } catch (e) {
+      console.warn('Error en updatePilotFrames:', e);
     }
   }
 
@@ -552,6 +580,7 @@ const SelfieSetup = (() => {
       rawBackCanvas = null;
     }
     counting = true;
+    liveView = true;
     if (btnPhoto) btnPhoto.disabled = true;
 
     // Asegurar que el lienzo de la foto anterior quede oculto y limpio de inmediato
@@ -560,7 +589,11 @@ const SelfieSetup = (() => {
       const s = shot.getContext('2d');
       if (s) s.clearRect(0, 0, shot.width, shot.height);
     }
-    if (video) video.style.visibility = 'visible';
+    if (video) {
+      video.style.display = 'block';
+      video.style.visibility = 'visible';
+      try { video.play().catch(() => {}); } catch (e) {}
+    }
     if (framingControls) framingControls.classList.add('hidden');
     if (camBox) camBox.classList.remove('can-drag');
 
@@ -580,30 +613,11 @@ const SelfieSetup = (() => {
       clearInterval(iv);
       countdownEl.textContent = photoMode === 'front' ? '¡SONRÍE!' : '¡QUIETO!';
       playSfx('beepHigh');
-      captureWithRetry(25, performance.now() + 8000);
+      captureWithRetry(15, performance.now() + 600);
     }, 700);
   }
 
-  function captureWithRetry(tries, deadline) {
-    if (!active) { counting = false; return; }
-    if (FaceCut.status === 'loading' && performance.now() < deadline) {
-      countdownEl.textContent = '⏳';
-      setTimeout(() => captureWithRetry(tries, deadline), 200);
-      return;
-    }
-    countdownEl.textContent = '';
-    const strict = FaceCut.status === 'ready' && tries > 0;
-    const r = FaceCut.fromVideo(video, !strict);
-    if (!r) {
-      if (tries <= 0 || performance.now() >= deadline) {
-        counting = false;
-        if (camMsg) camMsg.textContent = 'No se pudo capturar la foto. Pulsa "Hacer foto" para intentarlo de nuevo.';
-        refreshShot();
-        return;
-      }
-      setTimeout(() => captureWithRetry(tries - 1, deadline), 60);
-      return;
-    }
+  function onPhotoCaptured(r) {
     counting = false;
     liveView = false; // Foto recién hecha: ahora se muestra el lienzo para encuadrar y afinar
 
@@ -611,28 +625,59 @@ const SelfieSetup = (() => {
       rawFrontCanvas = r.raw;
       currentFace = r.face;
       cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: !!r.detected };
-      camMsg.textContent = '✅ ¡Cara frontal capturada en alta resolución! Arrastra o usa zoom si quieres afinar.';
+      if (camMsg) camMsg.textContent = '✅ ¡Cara frontal capturada en alta resolución! Arrastra o usa zoom si quieres afinar.';
     } else {
       rawBackCanvas = r.raw;
       const auto = FaceCut.autoDetectHeadCenter(rawBackCanvas);
       cropBack = { cx: auto.cx, cy: auto.cy, zoom: auto.zoom };
       currentBack = FaceCut.cropOval(rawBackCanvas, cropBack.cx, cropBack.cy, cropBack.zoom);
-      camMsg.textContent = '✅ ¡Foto trasera de tu nuca encuadrada! Arrastra o usa el zoom para afinar.';
+      if (camMsg) camMsg.textContent = '✅ ¡Foto trasera de tu nuca encuadrada! Arrastra o usa el zoom para afinar.';
     }
 
     playSfx('shutter');
 
     if (flashEl) {
       flashEl.classList.add('flash-on');
-      setTimeout(() => flashEl.classList.remove('flash-on'), 100);
+      setTimeout(() => flashEl.classList.remove('flash-on'), 120);
     }
 
     updatePilotFrames();
     refreshShot();
   }
 
+  function captureWithRetry(tries, deadline) {
+    if (!active) { counting = false; return; }
+    // Si el detector IA está cargando, damos solo una oportunidad breve (máx 300ms)
+    // para no congelar la toma si la conexión móvil es lenta.
+    if (FaceCut.status === 'loading' && performance.now() < deadline && tries > 10) {
+      countdownEl.textContent = '⏳';
+      setTimeout(() => captureWithRetry(tries - 1, deadline), 100);
+      return;
+    }
+    countdownEl.textContent = '';
+    const strict = (FaceCut.status === 'ready' && tries > 5);
+    const r = FaceCut.fromVideo(video, !strict);
+    if (!r) {
+      if (tries <= 0 || performance.now() >= deadline) {
+        // Último intento forzado con fallback activo para garantizar la foto siempre
+        const finalR = FaceCut.fromVideo(video, true);
+        if (finalR) {
+          onPhotoCaptured(finalR);
+          return;
+        }
+        counting = false;
+        if (camMsg) camMsg.textContent = 'No se pudo capturar la foto. Pulsa "Hacer foto" para intentarlo de nuevo.';
+        refreshShot();
+        return;
+      }
+      setTimeout(() => captureWithRetry(tries - 1, deadline), 50);
+      return;
+    }
+    onPhotoCaptured(r);
+  }
+
   function retake() {
-    camMsg.textContent = '';
+    if (camMsg) camMsg.textContent = '';
     counting = false;
     liveView = true; // Volver a la cámara en vivo limpia
     if (countdownEl) countdownEl.textContent = '';
@@ -651,7 +696,11 @@ const SelfieSetup = (() => {
       const s = shot.getContext('2d');
       if (s) s.clearRect(0, 0, shot.width, shot.height);
     }
-    if (video) video.style.visibility = 'visible';
+    if (video) {
+      video.style.display = 'block';
+      video.style.visibility = 'visible';
+      try { video.play().catch(() => {}); } catch (e) {}
+    }
     updatePilotFrames();
     refreshShot();
   }
@@ -676,7 +725,11 @@ const SelfieSetup = (() => {
       const s = shot.getContext('2d');
       if (s) s.clearRect(0, 0, shot.width, shot.height);
     }
-    if (video) video.style.visibility = 'visible';
+    if (video) {
+      video.style.display = 'block';
+      video.style.visibility = 'visible';
+      try { video.play().catch(() => {}); } catch (e) {}
+    }
     FaceDriver.clearFace();
     playSfx('confirm');
     refreshShot();
@@ -698,25 +751,30 @@ const SelfieSetup = (() => {
   /* Bucle de actualización y dibujo de la vista previa del kart */
   function previewLoop(timestamp) {
     if (!active) return;
-    animTime += 0.016;
-    liveTimer -= 0.016;
+    try {
+      animTime += 0.016;
+      liveTimer -= 0.016;
 
-    // Detección en vivo si estamos en frontal y aún no hay foto tomada
-    if (photoMode === 'front' && !currentFace && camOK && video && video.readyState >= 2 && liveTimer <= 0) {
-      const r = FaceCut.fromVideo(video, FaceCut.status === 'failed');
-      if (r) {
-        liveFace = r.face;
-        liveDetected = r.detected;
-      } else {
-        liveFace = null;
-        liveDetected = false;
+      // Detección en vivo si estamos en frontal y aún no hay foto tomada
+      if (photoMode === 'front' && !currentFace && camOK && video && video.readyState >= 2 && liveTimer <= 0) {
+        const r = FaceCut.fromVideo(video, FaceCut.status === 'failed' || FaceCut.status === 'ready');
+        if (r) {
+          liveFace = r.face;
+          liveDetected = r.detected;
+        } else {
+          liveFace = null;
+          liveDetected = false;
+        }
+        liveTimer = 0.12;
       }
-      liveTimer = 0.12;
-    }
 
-    updateStatusText();
-    drawKartPreview();
-    requestAnimationFrame(previewLoop);
+      updateStatusText();
+      drawKartPreview();
+    } catch (e) {
+      console.warn('Error en previewLoop:', e);
+    } finally {
+      if (active) requestAnimationFrame(previewLoop);
+    }
   }
 
   function updateStatusText() {
@@ -724,19 +782,22 @@ const SelfieSetup = (() => {
     const st = FaceCut.status;
     let txt = '', cls = '';
 
-    if (st === 'loading' || st === 'idle') {
-      txt = '⏳ Cargando detector de caras con IA…';
-    } else if (currentFace && currentBack) {
+    if (currentFace && currentBack) {
       txt = '🌟 ¡Piloto completo en MÁXIMA CALIDAD! (Frontal y Nuca listas)';
       cls = 'ok';
     } else if (currentFace) {
       txt = '✂️ Cara frontal lista. ¡Recuerda hacerte la foto por detrás (nuca)!';
+      cls = 'ok';
+    } else if (currentBack) {
+      txt = '🔙 Foto de nuca lista. ¡Hazte ahora la foto frontal (cara)!';
       cls = 'ok';
     } else if (!camOK) {
       txt = '📷 Esperando cámara o archivo de imagen';
     } else if (liveDetected) {
       txt = '✅ ¡Cara detectada! Pulsa "Hacer foto (3s)"';
       cls = 'ok';
+    } else if (st === 'loading') {
+      txt = '⏳ Preparando detector de caras con IA…';
     } else {
       txt = photoMode === 'front' ? '👀 Centra tu rostro en el óvalo…' : '🔙 Coloca tu nuca/pelo en el óvalo…';
       cls = 'warn';
@@ -771,54 +832,12 @@ const SelfieSetup = (() => {
     pctx.ellipse(cx, cy + 22, 60, 16, 0, 0, Math.PI * 2);
     pctx.fill();
 
-    // Ángulo de giro de la plataforma (360° en ~5 segundos)
-    const angle = (animTime * 1.5) % (Math.PI * 2);
+    // Obtener datos del personaje (con fallback seguro)
+    const ch = (typeof CHARACTERS !== 'undefined' && CHARACTERS[selectedChar])
+      ? CHARACTERS[selectedChar]
+      : { name: 'mario', file: 'drivers/mario.png', type: 'BALANCED' };
 
-    // Obtener sprite del kart en este ángulo
-    const ch = CHARACTERS[selectedChar];
-    if (!previewAnim || previewAnimChar !== selectedChar) {
-      previewAnimChar = selectedChar;
-      previewAnim = new Animator(ch.file.replace('drivers/', ''));
-      _lastFace = null;
-    }
-
-    // Si hay fotos listas (capturada o en vivo), aplicar rostro inmediatamente
-    const faceToUse = currentFace || liveFace;
-    if (faceToUse) {
-      if (_lastFace !== faceToUse || _lastBack !== currentBack || _lastChar !== selectedChar) {
-        _lastFace = faceToUse;
-        _lastBack = currentBack;
-        _lastChar = selectedChar;
-        FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
-        FaceDriver.applyToAnimator(previewAnim, selectedChar);
-      }
-    } else if (_lastFace !== null) {
-      _lastFace = null;
-      _lastBack = null;
-      _lastChar = selectedChar;
-      previewAnim = new Animator(ch.file.replace('drivers/', ''));
-    }
-
-    const mf = previewAnim.minimapFrame(angle);
-    const sprite = (previewAnim.driving && previewAnim.driving[mf.frame]) ? previewAnim.driving[mf.frame] : null;
-
-    if (sprite) {
-      const kartSize = 140; // Tamaño ampliado para lucir la cabeza grande en el preview
-      pctx.save();
-      pctx.imageSmoothingEnabled = true;
-      pctx.imageSmoothingQuality = 'high';
-      pctx.translate(cx, cy);
-
-      // Pequeño bamboleo de motor
-      const bob = Math.sin(animTime * 18) * 1.5;
-      pctx.translate(0, bob);
-
-      if (mf.mirror) pctx.scale(-1, 1);
-      pctx.drawImage(sprite, -kartSize / 2, -kartSize + 22, kartSize, kartSize);
-      pctx.restore();
-    }
-
-    // Texto de nombre del piloto y personaje
+    // Texto de nombre del piloto y personaje (DIBUJAR SIEMPRE para que la interfaz nunca quede vacía)
     pctx.fillStyle = '#ffe060';
     pctx.font = 'bold 15px monospace';
     pctx.textAlign = 'center';
@@ -827,7 +846,67 @@ const SelfieSetup = (() => {
 
     pctx.fillStyle = '#a0d0ff';
     pctx.font = '11px monospace';
-    pctx.fillText(ch.name.toUpperCase() + ' · ' + ch.type.toUpperCase(), cx, 40);
+    pctx.fillText(ch.name.toUpperCase() + ' · ' + (ch.type || 'BALANCED').toUpperCase(), cx, 40);
+
+    // Ángulo de giro de la plataforma (360° en ~5 segundos)
+    const angle = (animTime * 1.5) % (Math.PI * 2);
+
+    try {
+      const driverName = ch.file.replace('drivers/', '');
+      const sheet = (typeof Assets !== 'undefined') ? Assets.img(driverName) : null;
+
+      // Si no existe previewAnim, o cambió el personaje, o la hoja gráfica de assets acaba de cargarse
+      if (!previewAnim || previewAnimChar !== selectedChar || (!previewAnim._sheetReady && sheet)) {
+        previewAnimChar = selectedChar;
+        previewAnim = new Animator(driverName);
+        previewAnim._sheetReady = !!sheet;
+        _lastFace = null;
+      }
+
+      // Si hay fotos listas (capturada o en vivo), aplicar rostro inmediatamente
+      const faceToUse = currentFace || liveFace;
+      if (faceToUse) {
+        if (_lastFace !== faceToUse || _lastBack !== currentBack || _lastChar !== selectedChar || !previewAnim.hasCustomFace) {
+          _lastFace = faceToUse;
+          _lastBack = currentBack;
+          _lastChar = selectedChar;
+          FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
+          FaceDriver.applyToAnimator(previewAnim, selectedChar);
+        }
+      } else if (_lastFace !== null) {
+        _lastFace = null;
+        _lastBack = null;
+        _lastChar = selectedChar;
+        previewAnim = new Animator(driverName);
+        previewAnim._sheetReady = !!sheet;
+      }
+
+      const mf = previewAnim.minimapFrame(angle);
+      let sprite = (previewAnim.driving && previewAnim.driving[mf.frame]) ? previewAnim.driving[mf.frame] : null;
+
+      // Si por alguna razón el fotograma específico está vacío, intentar el fotograma frontal o el primero
+      if (!sprite && previewAnim.driving && previewAnim.driving.length > 0) {
+        sprite = previewAnim.driving[0];
+      }
+
+      if (sprite) {
+        const kartSize = 140; // Tamaño ampliado para lucir la cabeza grande en el preview
+        pctx.save();
+        pctx.imageSmoothingEnabled = true;
+        pctx.imageSmoothingQuality = 'high';
+        pctx.translate(cx, cy);
+
+        // Pequeño bamboleo de motor
+        const bob = Math.sin(animTime * 18) * 1.5;
+        pctx.translate(0, bob);
+
+        if (mf.mirror) pctx.scale(-1, 1);
+        pctx.drawImage(sprite, -kartSize / 2, -kartSize + 22, kartSize, kartSize);
+        pctx.restore();
+      }
+    } catch (err) {
+      console.warn('drawKartPreview error:', err);
+    }
   }
 
   function toggleHeadgear() {

@@ -34,10 +34,11 @@ global.Image = class {
   }
 };
 global.fetch = async (url) => {
-  const buf = fs.readFileSync(path.join(__dirname, url));
+  const p = path.join(__dirname, url);
+  const buf = fs.readFileSync(p);
   return {
     text: async () => buf.toString('utf8'),
-    arrayBuffer: async () => buf.buffer
+    arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
   };
 };
 global.performance = require('perf_hooks').performance;

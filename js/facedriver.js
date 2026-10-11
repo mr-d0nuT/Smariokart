@@ -462,168 +462,173 @@ const FaceDriver = (() => {
     const skinColor = userFaceCanvas._skinColor || '#f0c8a0';
     const hairColor = userFaceCanvas._hairColor || '#3a2010';
 
-    for (let f = 0; f < 12; f++) {
-      const origSlice = Assets.slice(driverName, {
-        x: 32 * f, y: 32, w: 32, h: 32
-      });
+    try {
+      for (let f = 0; f < 12; f++) {
+        const origSlice = Assets.slice(driverName, {
+          x: 32 * f, y: 32, w: 32, h: 32
+        });
 
-      const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = SPRITE_SIZE;
-      frameCanvas.height = SPRITE_SIZE;
-      const fctx = frameCanvas.getContext('2d');
-      fctx.imageSmoothingEnabled = true;
-      fctx.imageSmoothingQuality = 'high';
+        const frameCanvas = document.createElement('canvas');
+        frameCanvas.width = SPRITE_SIZE;
+        frameCanvas.height = SPRITE_SIZE;
+        const fctx = frameCanvas.getContext('2d');
+        fctx.imageSmoothingEnabled = true;
+        fctx.imageSmoothingQuality = 'high';
 
-      // 1. DIBUJAR CHASIS ORIGINAL DEL KART Y RUEDAS EN LA BASE (filas 18 a 32 de SNES -> y = 144..256)
-      // Manteniendo el kart original exactamente en su sitio sobre el asfalto
-      fctx.imageSmoothingEnabled = false;
-      fctx.drawImage(origSlice, 0, 18, 32, 14, 0, 144, 256, 112);
+        // 1. DIBUJAR CHASIS ORIGINAL DEL KART Y RUEDAS EN LA BASE (filas 18 a 32 de SNES -> y = 144..256)
+        // Manteniendo el kart original exactamente en su sitio sobre el asfalto
+        fctx.imageSmoothingEnabled = false;
+        fctx.drawImage(origSlice, 0, 18, 32, 14, 0, 144, 256, 112);
 
-      // 2. DIBUJAR CUERPO, HOMBROS Y VOLANTE (filas 12 a 18 de SNES -> y = 96..144)
-      fctx.drawImage(origSlice, 0, 12, 32, 7, 0, 96, 256, 56);
-      fctx.imageSmoothingEnabled = true;
+        // 2. DIBUJAR CUERPO, HOMBROS Y VOLANTE (filas 12 a 18 de SNES -> y = 96..144)
+        fctx.drawImage(origSlice, 0, 12, 32, 7, 0, 96, 256, 56);
+        fctx.imageSmoothingEnabled = true;
 
-      // -----------------------------------------------------------------
-      // CASO A: VISTA TRASERA RECTA (Frame 0 - conduciendo en línea recta)
-      // -----------------------------------------------------------------
-      if (f === 0) {
-        const cx = 128, cy = 94, hw = 126, hh = 120;
-        if (userBackCanvas) {
-          // Si el usuario capturó foto de nuca/por detrás:
+        // -----------------------------------------------------------------
+        // CASO A: VISTA TRASERA RECTA (Frame 0 - conduciendo en línea recta)
+        // -----------------------------------------------------------------
+        if (f === 0) {
+          const cx = 128, cy = 94, hw = 126, hh = 120;
+          if (userBackCanvas) {
+            // Si el usuario capturó foto de nuca/por detrás:
+            fctx.save();
+            fctx.beginPath();
+            fctx.ellipse(cx, cy + 4, hw * 0.44, hh * 0.42, 0, 0, Math.PI * 2);
+            fctx.clip();
+            fctx.drawImage(userBackCanvas, cx - hw / 2, cy - hh / 2 + 4, hw, hh);
+            fctx.restore();
+          } else {
+            // Si NO hay foto trasera: generamos pelo 3D volumétrico sintetizado con su tono real
+            drawBackHair(fctx, cx, cy, hw, hh, hairColor, skinColor);
+          }
+          // Accesorio/gorra original vista desde atrás
+          drawHeadgear(fctx, characterIndex, 0, cx, cy, hw, hh, 0);
+        }
+        // -----------------------------------------------------------------
+        // CASO B: GIRO EN CURVA & DERRAPE DINÁMICO (Frames 1 a 4)
+        // ¡EL PILOTO GIRA LA CABEZA HACIA EL ÁPICE DE LA CURVA!
+        // -----------------------------------------------------------------
+        else if (f >= 1 && f <= 4) {
+          const turnK = f / 4; // 0.25 (Frame 1) .. 1.0 (Frame 4 Derrape)
+          const yaw = turnK * Math.PI * 0.38; // Ángulo de giro de cabeza hasta ~68°
+          const cx = 128 + Math.round(f * 3.5);
+          const cy = 94;
+          const hw = 126 + Math.round(f * 2);
+          const hh = 122;
+
+          fctx.save();
+
+          // 1. Parte izquierda/posterior de la cabeza (pelo / nuca)
           fctx.save();
           fctx.beginPath();
-          fctx.ellipse(cx, cy + 4, hw * 0.44, hh * 0.42, 0, 0, Math.PI * 2);
+          fctx.ellipse(cx - Math.round(hw * 0.12), cy, hw * 0.44, hh * 0.42, -yaw * 0.2, 0, Math.PI * 2);
           fctx.clip();
-          fctx.drawImage(userBackCanvas, cx - hw / 2, cy - hh / 2 + 4, hw, hh);
+          if (userBackCanvas) {
+            fctx.drawImage(userBackCanvas, cx - hw / 2 - 10, cy - hh / 2, hw, hh);
+          } else {
+            drawBackHair(fctx, cx - Math.round(hw * 0.12), cy, hw, hh, hairColor, skinColor);
+          }
           fctx.restore();
-        } else {
-          // Si NO hay foto trasera: generamos pelo 3D volumétrico sintetizado con su tono real
-          drawBackHair(fctx, cx, cy, hw, hh, hairColor, skinColor);
+
+          // 2. Parte derecha/frontal: ¡EL ROSTRO DEL JUGADOR GIRANDO EN PERSPECTIVA 3D!
+          // En frame 1 se ve la mejilla y patilla; en frames 2-4 se aprecian perfectamente
+          // el ojo, pómulo, sonrisa y mandíbula asomándose en el giro.
+          const faceW = Math.round(hw * (0.55 + turnK * 0.40));
+          const faceH = hh;
+          const faceX = cx - Math.round(hw * 0.10) + Math.round(turnK * 20);
+          const faceY = cy;
+
+          fctx.save();
+          fctx.beginPath();
+          fctx.ellipse(faceX, faceY, faceW * 0.46, faceH * 0.45, yaw * 0.15, 0, Math.PI * 2);
+          fctx.clip();
+          fctx.drawImage(userFaceCanvas, faceX - faceW / 2, faceY - faceH / 2, faceW, faceH);
+          fctx.restore();
+
+          // 3. Accesorio/gorra orientada con el giro
+          drawHeadgear(fctx, characterIndex, f, cx, cy, hw, hh, yaw);
+
+          fctx.restore();
         }
-        // Accesorio/gorra original vista desde atrás
-        drawHeadgear(fctx, characterIndex, 0, cx, cy, hw, hh, 0);
-      }
-      // -----------------------------------------------------------------
-      // CASO B: GIRO EN CURVA & DERRAPE DINÁMICO (Frames 1 a 4)
-      // ¡EL PILOTO GIRA LA CABEZA HACIA EL ÁPICE DE LA CURVA!
-      // -----------------------------------------------------------------
-      else if (f >= 1 && f <= 4) {
-        const turnK = f / 4; // 0.25 (Frame 1) .. 1.0 (Frame 4 Derrape)
-        const yaw = turnK * Math.PI * 0.38; // Ángulo de giro de cabeza hasta ~68°
-        const cx = 128 + Math.round(f * 3.5);
-        const cy = 94;
-        const hw = 126 + Math.round(f * 2);
-        const hh = 122;
+        // -----------------------------------------------------------------
+        // CASO C: VISTAS LATERALES Y DE PERFIL (Frames 5 a 7)
+        // -----------------------------------------------------------------
+        else if (f >= 5 && f <= 7) {
+          const cx = 132;
+          const cy = 94;
+          const hw = 124;
+          const hh = 120;
+          const yaw = Math.PI * 0.50; // Perfil 90°
 
-        fctx.save();
+          fctx.save();
+          // Silueta lateral con tono de piel y patilla del jugador
+          fctx.fillStyle = skinColor;
+          fctx.beginPath();
+          fctx.ellipse(cx, cy, hw * 0.42, hh * 0.44, 0.1, 0, Math.PI * 2);
+          fctx.fill();
 
-        // 1. Parte izquierda/posterior de la cabeza (pelo / nuca)
-        fctx.save();
-        fctx.beginPath();
-        fctx.ellipse(cx - Math.round(hw * 0.12), cy, hw * 0.44, hh * 0.42, -yaw * 0.2, 0, Math.PI * 2);
-        fctx.clip();
-        if (userBackCanvas) {
-          fctx.drawImage(userBackCanvas, cx - hw / 2 - 10, cy - hh / 2, hw, hh);
-        } else {
-          drawBackHair(fctx, cx - Math.round(hw * 0.12), cy, hw, hh, hairColor, skinColor);
+          // Parte posterior del pelo lateral
+          fctx.fillStyle = hairColor;
+          fctx.beginPath();
+          fctx.ellipse(cx - hw * 0.18, cy, hw * 0.32, hh * 0.42, 0, 0, Math.PI * 2);
+          fctx.fill();
+
+          // Cara asomando en el lateral derecho
+          fctx.save();
+          fctx.beginPath();
+          fctx.ellipse(cx + 8, cy, hw * 0.34, hh * 0.42, 0, 0, Math.PI * 2);
+          fctx.clip();
+          fctx.drawImage(userFaceCanvas, cx - hw / 2 + 18, cy - hh / 2, hw, hh);
+          fctx.restore();
+
+          // Gorra/accesorio de perfil
+          drawHeadgear(fctx, characterIndex, f, cx, cy, hw, hh, yaw);
+          fctx.restore();
         }
-        fctx.restore();
+        // -----------------------------------------------------------------
+        // CASO D: VISTAS FRONTALES (Frames 8 a 11 - ¡MODO CABEZÓN ARCADE TOTAL!)
+        // -----------------------------------------------------------------
+        else {
+          // Encarando a la cámara: cara tan ancha como la cabeza completa del personaje
+          let cx = 128, cy = 96, hw = 138, hh = 128;
+          let yaw = 0;
+          if (f === 11) { cx = 128; cy = 96; hw = 140; hh = 130; yaw = 0; } // Frontal directo: de oreja a oreja
+          else if (f === 10) { cx = 130; cy = 96; hw = 136; hh = 128; yaw = 0.12; }
+          else if (f === 9) { cx = 133; cy = 96; hw = 132; hh = 126; yaw = 0.25; }
+          else if (f === 8) { cx = 136; cy = 96; hw = 128; hh = 124; yaw = 0.38; }
 
-        // 2. Parte derecha/frontal: ¡EL ROSTRO DEL JUGADOR GIRANDO EN PERSPECTIVA 3D!
-        // En frame 1 se ve la mejilla y patilla; en frames 2-4 se aprecian perfectamente
-        // el ojo, pómulo, sonrisa y mandíbula asomándose en el giro.
-        const faceW = Math.round(hw * (0.55 + turnK * 0.40));
-        const faceH = hh;
-        const faceX = cx - Math.round(hw * 0.10) + Math.round(turnK * 20);
-        const faceY = cy;
+          // Borrar cara original
+          fctx.clearRect(24, 40, 208, 110);
 
-        fctx.save();
-        fctx.beginPath();
-        fctx.ellipse(faceX, faceY, faceW * 0.46, faceH * 0.45, yaw * 0.15, 0, Math.PI * 2);
-        fctx.clip();
-        fctx.drawImage(userFaceCanvas, faceX - faceW / 2, faceY - faceH / 2, faceW, faceH);
-        fctx.restore();
+          // 1. Integrar el selfie en alta resolución ocupando todo el ancho de la cabeza
+          fctx.save();
+          fctx.beginPath();
+          fctx.ellipse(cx, cy, hw * 0.48, hh * 0.47, yaw * 0.1, 0, Math.PI * 2);
+          fctx.clip();
+          fctx.drawImage(userFaceCanvas, cx - hw / 2, cy - hh / 2, hw, hh);
 
-        // 3. Accesorio/gorra orientada con el giro
-        drawHeadgear(fctx, characterIndex, f, cx, cy, hw, hh, yaw);
+          // 2. Sombra de oclusión ambiental bajo la barbilla
+          const chinShadow = fctx.createLinearGradient(0, cy + hh * 0.30, 0, cy + hh * 0.48);
+          chinShadow.addColorStop(0, 'rgba(0,0,0,0.0)');
+          chinShadow.addColorStop(1, 'rgba(0,0,0,0.38)');
+          fctx.fillStyle = chinShadow;
+          fctx.fill();
+          fctx.restore();
 
-        fctx.restore();
+          // 3. Accesorio/Gorra HD auténtica redibujada por encima con visera y emblema
+          drawHeadgear(fctx, characterIndex, f, cx, cy, hw, hh, yaw);
+
+          // 4. Volante y manos del piloto en primer plano delante del pecho
+          fctx.imageSmoothingEnabled = false;
+          fctx.drawImage(origSlice, 0, 19, 32, 9, 0, 152, 256, 72);
+          fctx.imageSmoothingEnabled = true;
+        }
+
+        frames.push(frameCanvas);
       }
-      // -----------------------------------------------------------------
-      // CASO C: VISTAS LATERALES Y DE PERFIL (Frames 5 a 7)
-      // -----------------------------------------------------------------
-      else if (f >= 5 && f <= 7) {
-        const cx = 132;
-        const cy = 94;
-        const hw = 124;
-        const hh = 120;
-        const yaw = Math.PI * 0.50; // Perfil 90°
-
-        fctx.save();
-        // Silueta lateral con tono de piel y patilla del jugador
-        fctx.fillStyle = skinColor;
-        fctx.beginPath();
-        fctx.ellipse(cx, cy, hw * 0.42, hh * 0.44, 0.1, 0, Math.PI * 2);
-        fctx.fill();
-
-        // Parte posterior del pelo lateral
-        fctx.fillStyle = hairColor;
-        fctx.beginPath();
-        fctx.ellipse(cx - hw * 0.18, cy, hw * 0.32, hh * 0.42, 0, 0, Math.PI * 2);
-        fctx.fill();
-
-        // Cara asomando en el lateral derecho
-        fctx.save();
-        fctx.beginPath();
-        fctx.ellipse(cx + 8, cy, hw * 0.34, hh * 0.42, 0, 0, Math.PI * 2);
-        fctx.clip();
-        fctx.drawImage(userFaceCanvas, cx - hw / 2 + 18, cy - hh / 2, hw, hh);
-        fctx.restore();
-
-        // Gorra/accesorio de perfil
-        drawHeadgear(fctx, characterIndex, f, cx, cy, hw, hh, yaw);
-        fctx.restore();
-      }
-      // -----------------------------------------------------------------
-      // CASO D: VISTAS FRONTALES (Frames 8 a 11 - ¡MODO CABEZÓN ARCADE TOTAL!)
-      // -----------------------------------------------------------------
-      else {
-        // Encarando a la cámara: cara tan ancha como la cabeza completa del personaje
-        let cx = 128, cy = 96, hw = 138, hh = 128;
-        let yaw = 0;
-        if (f === 11) { cx = 128; cy = 96; hw = 140; hh = 130; yaw = 0; } // Frontal directo: de oreja a oreja
-        else if (f === 10) { cx = 130; cy = 96; hw = 136; hh = 128; yaw = 0.12; }
-        else if (f === 9) { cx = 133; cy = 96; hw = 132; hh = 126; yaw = 0.25; }
-        else if (f === 8) { cx = 136; cy = 96; hw = 128; hh = 124; yaw = 0.38; }
-
-        // Borrar cara original
-        fctx.clearRect(24, 40, 208, 110);
-
-        // 1. Integrar el selfie en alta resolución ocupando todo el ancho de la cabeza
-        fctx.save();
-        fctx.beginPath();
-        fctx.ellipse(cx, cy, hw * 0.48, hh * 0.47, yaw * 0.1, 0, Math.PI * 2);
-        fctx.clip();
-        fctx.drawImage(userFaceCanvas, cx - hw / 2, cy - hh / 2, hw, hh);
-
-        // 2. Sombra de oclusión ambiental bajo la barbilla
-        const chinShadow = fctx.createLinearGradient(0, cy + hh * 0.30, 0, cy + hh * 0.48);
-        chinShadow.addColorStop(0, 'rgba(0,0,0,0.0)');
-        chinShadow.addColorStop(1, 'rgba(0,0,0,0.38)');
-        fctx.fillStyle = chinShadow;
-        fctx.fill();
-        fctx.restore();
-
-        // 3. Accesorio/Gorra HD auténtica redibujada por encima con visera y emblema
-        drawHeadgear(fctx, characterIndex, f, cx, cy, hw, hh, yaw);
-
-        // 4. Volante y manos del piloto en primer plano delante del pecho
-        fctx.imageSmoothingEnabled = false;
-        fctx.drawImage(origSlice, 0, 19, 32, 9, 0, 152, 256, 72);
-        fctx.imageSmoothingEnabled = true;
-      }
-
-      frames.push(frameCanvas);
+    } catch (e) {
+      console.warn('buildDrivingFrames error:', e);
+      return null;
     }
 
     return frames;
@@ -762,9 +767,13 @@ const FaceDriver = (() => {
 
     // Solo reconstruir lienzos si ha habido cambio de imagen o de personaje (optimización 60fps)
     if (faceChanged || charChanged || !customDriving[charIdx]) {
-      customDriving[charIdx] = buildDrivingFrames(charIdx);
-      minimapIcon = buildMinimapIcon(charIdx);
-      podiumFace = buildPodiumFace(charIdx);
+      try {
+        customDriving[charIdx] = buildDrivingFrames(charIdx);
+        minimapIcon = buildMinimapIcon(charIdx);
+        podiumFace = buildPodiumFace(charIdx);
+      } catch (e) {
+        console.warn('FaceDriver setFace build error:', e);
+      }
     }
 
     if (persist) {
@@ -802,13 +811,17 @@ const FaceDriver = (() => {
   /* Aplica los cuadros personalizados a un objeto Animator existente */
   function applyToAnimator(animator, characterIndex) {
     if (!active || !animator) return;
-    const cIdx = (typeof characterIndex === 'number' && characterIndex >= 0) ? characterIndex : charIdx;
-    if (!customDriving[cIdx] || !Array.isArray(customDriving[cIdx]) || customDriving[cIdx].length !== 12) {
-      customDriving[cIdx] = buildDrivingFrames(cIdx);
-    }
-    if (Array.isArray(customDriving[cIdx]) && customDriving[cIdx].length === 12) {
-      animator.driving = customDriving[cIdx];
-      animator.hasCustomFace = true;
+    try {
+      const cIdx = (typeof characterIndex === 'number' && characterIndex >= 0) ? characterIndex : charIdx;
+      if (!customDriving[cIdx] || !Array.isArray(customDriving[cIdx]) || customDriving[cIdx].length !== 12) {
+        customDriving[cIdx] = buildDrivingFrames(cIdx);
+      }
+      if (Array.isArray(customDriving[cIdx]) && customDriving[cIdx].length === 12) {
+        animator.driving = customDriving[cIdx];
+        animator.hasCustomFace = true;
+      }
+    } catch (e) {
+      console.warn('FaceDriver applyToAnimator error:', e);
     }
   }
 
