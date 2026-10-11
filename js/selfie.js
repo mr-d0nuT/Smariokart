@@ -765,7 +765,12 @@ const SelfieSetup = (() => {
     // Si hay fotos listas, generar frames con cabeza grande en alta definición
     const faceToUse = currentFace || liveFace;
     if (faceToUse) {
-      FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
+      if (SelfieSetup._lastFace !== faceToUse || SelfieSetup._lastBack !== currentBack || SelfieSetup._lastChar !== selectedChar) {
+        SelfieSetup._lastFace = faceToUse;
+        SelfieSetup._lastBack = currentBack;
+        SelfieSetup._lastChar = selectedChar;
+        FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
+      }
       FaceDriver.applyToAnimator(anim, selectedChar);
     }
 

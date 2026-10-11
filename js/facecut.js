@@ -96,20 +96,31 @@ const FaceCut = (() => {
     o.filter = 'contrast(1.15) saturate(1.3) brightness(1.05)';
     o.drawImage(work, ox, oy, W * k, H * k);
     o.filter = 'none';
-    // máscara con borde suave
+    // Máscara con borde suave difuminado profesional (sin trazos rígidos ni halos)
     const mask = document.createElement('canvas');
     mask.width = mask.height = S;
     const m = mask.getContext('2d');
-    m.filter = 'blur(1.5px)';
+    m.filter = 'blur(3px)';
     m.fillStyle = '#000';
     polyPath(m, tp); m.fill();
     o.globalCompositeOperation = 'destination-in';
     o.drawImage(mask, 0, 0);
     o.globalCompositeOperation = 'source-over';
-    // contorno estilo cómic
-    o.strokeStyle = 'rgba(40,20,10,.55)'; o.lineWidth = 2.5; o.lineJoin = 'round';
-    polyPath(o, tp); o.stroke();
     out._cut = true;
+    out._skinColor = '#f0c8a0';
+    out._hairColor = '#3a2010';
+    try {
+      const sample = o.getImageData(S / 2 - 8, S / 2 - 8, 16, 16);
+      if (sample && sample.data) {
+        let r = 0, g = 0, b = 0, count = 0;
+        for (let i = 0; i < sample.data.length; i += 4) {
+          if (sample.data[i + 3] > 180) {
+            r += sample.data[i]; g += sample.data[i + 1]; b += sample.data[i + 2]; count++;
+          }
+        }
+        if (count > 0) out._skinColor = `rgb(${Math.round(r / count)},${Math.round(g / count)},${Math.round(b / count)})`;
+      }
+    } catch(e) {}
     return out;
   }
 
@@ -122,7 +133,7 @@ const FaceCut = (() => {
     return raw;
   }
 
-  // Recorte de óvalo en cualquier coordenada (cx, cy) y zoom con máscara suave y borde cómic.
+  // Recorte de óvalo en cualquier coordenada (cx, cy) y zoom con máscara suave profesional.
   function cropOval(sourceCanvas, cx = 0.5, cy = 0.5, zoom = 1.0, S = FACE_SIZE) {
     if (!sourceCanvas) return null;
     const W = sourceCanvas.width || sourceCanvas.naturalWidth || 320;
@@ -138,33 +149,40 @@ const FaceCut = (() => {
     const o = out.getContext('2d');
     o.imageSmoothingEnabled = true;
     o.imageSmoothingQuality = 'high';
-    o.filter = 'contrast(1.12) saturate(1.25) brightness(1.04)';
+    o.filter = 'contrast(1.10) saturate(1.20) brightness(1.03)';
     o.drawImage(sourceCanvas, ox, oy, W * k, H * k);
     o.filter = 'none';
 
-    // Máscara ovalada suave
+    // Máscara ovalada suave difuminada profesional
     const mask = document.createElement('canvas');
     mask.width = mask.height = S;
     const m = mask.getContext('2d');
-    m.filter = 'blur(2.5px)';
+    m.filter = 'blur(3.5px)';
     m.fillStyle = '#000';
     m.beginPath();
-    m.ellipse(S / 2, S / 2, S * 0.35, S * 0.45, 0, 0, Math.PI * 2);
+    m.ellipse(S / 2, S / 2, S * 0.38, S * 0.46, 0, 0, Math.PI * 2);
     m.fill();
 
     o.globalCompositeOperation = 'destination-in';
     o.drawImage(mask, 0, 0);
     o.globalCompositeOperation = 'source-over';
 
-    // Borde sutil estilo cómic
-    o.strokeStyle = 'rgba(40, 20, 10, 0.55)';
-    o.lineWidth = 2.5;
-    o.beginPath();
-    o.ellipse(S / 2, S / 2, S * 0.35, S * 0.45, 0, 0, Math.PI * 2);
-    o.stroke();
-
     out._cut = 'oval';
     out._crop = { cx, cy, zoom: z };
+    out._skinColor = '#f0c8a0';
+    out._hairColor = '#3a2010';
+    try {
+      const sample = o.getImageData(S / 2 - 8, S / 2 - 8, 16, 16);
+      if (sample && sample.data) {
+        let r = 0, g = 0, b = 0, count = 0;
+        for (let i = 0; i < sample.data.length; i += 4) {
+          if (sample.data[i + 3] > 180) {
+            r += sample.data[i]; g += sample.data[i + 1]; b += sample.data[i + 2]; count++;
+          }
+        }
+        if (count > 0) out._skinColor = `rgb(${Math.round(r / count)},${Math.round(g / count)},${Math.round(b / count)})`;
+      }
+    } catch(e) {}
     return out;
   }
 

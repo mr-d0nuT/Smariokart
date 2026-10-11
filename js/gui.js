@@ -215,8 +215,149 @@ const Gui = {
     ctx.restore();
   },
 
-  draw(ctx) {
+  drawPilotCam(ctx, race) {
+    if (typeof FaceDriver === 'undefined' || !FaceDriver.active || !FaceDriver.faceCanvas) return;
+
+    const player = race && race.player ? race.player : null;
+    const anim = player && player.animator ? player.animator : null;
+
+    const isStar = anim && anim.starTime > 0;
+    const isSmall = anim && anim.smallTime > 0;
+    const isHit = anim && (anim.state === 'hit' || anim.state === 'fall');
+    const isBoost = player && ((player.boostTimer && player.boostTimer > 0) || (player.speedForward && player.speedForward > 0.28));
+    const isFirst = this.rank === 1;
+
+    const t = (typeof performance !== 'undefined' && performance.now) ? performance.now() / 1000 : this.time;
+
+    // Centro del badge circular del piloto
+    const bx = 32, by = 26, r = 18;
+
+    ctx.save();
+
+    // Dinámica reactiva según estado de carrera
+    let ox = 0, oy = 0, scale = 1.0;
+    if (isHit) {
+      ox = Math.sin(t * 30) * 3;
+      oy = Math.cos(t * 26) * 2;
+    } else if (isBoost) {
+      scale = 1.10;
+      ox = (Math.random() - 0.5) * 1.5;
+      oy = (Math.random() - 0.5) * 1.5;
+    } else if (isSmall) {
+      scale = 0.82;
+    } else {
+      oy = Math.sin(t * 6) * 0.6; // respiración / vibración suave de motor
+    }
+
+    ctx.translate(bx + ox, by + oy);
+    if (scale !== 1.0) ctx.scale(scale, scale);
+
+    // 1. Destellos y auras de poder
+    if (isStar) {
+      const starColors = ['#ffe800', '#00f2ff', '#ff2a6d', '#39ff14', '#ff7700', '#ffffff'];
+      const cIdx = Math.floor((t * 12) % starColors.length);
+      const auraCol = starColors[cIdx];
+      ctx.shadowColor = auraCol;
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = auraCol;
+      ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, Math.PI * 2); ctx.fill();
+    } else if (isBoost) {
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 16;
+      ctx.strokeStyle = '#fff275';
+      ctx.lineWidth = 2.5;
+      for (let i = 0; i < 6; i++) {
+        const ang = (t * 8 + i * Math.PI / 3) % (Math.PI * 2);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * (r + 1), Math.sin(ang) * (r + 1));
+        ctx.lineTo(Math.cos(ang) * (r + 8), Math.sin(ang) * (r + 8));
+        ctx.stroke();
+      }
+    }
+
+    // 2. Bisel exterior arcade
+    const theme = (FaceDriver.themes && FaceDriver.themes[FaceDriver.charIdx]) || { border: '#e52521' };
+    const borderCol = isStar ? '#ffd700' : (theme.border || '#e52521');
+
+    ctx.fillStyle = borderCol;
+    ctx.beginPath(); ctx.arc(0, 0, r + 2.5, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#0e0e18';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+
+    // 3. Retrato del piloto en alta definición
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0, 0, r - 0.5, 0, Math.PI * 2); ctx.clip();
+
+    if (FaceDriver.minimapIcon) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(FaceDriver.minimapIcon, -r, -r, r * 2, r * 2);
+    } else if (FaceDriver.faceCanvas) {
+      ctx.drawImage(FaceDriver.faceCanvas, -r, -r, r * 2, r * 2);
+    }
+    ctx.restore();
+
+    // 4. Estrellas mareadas orbitando si ha recibido un impacto
+    if (isHit) {
+      ctx.fillStyle = '#ffee00';
+      for (let s = 0; s < 3; s++) {
+        const sang = t * 7 + (s * Math.PI * 2 / 3);
+        const sx = Math.cos(sang) * (r + 4);
+        const sy = -r - 4 + Math.sin(sang) * 3;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 5. Corona dorada si va en 1ª posición
+    if (isFirst && !isHit) {
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.moveTo(-6, -r);
+      ctx.lineTo(-8, -r - 8);
+      ctx.lineTo(-3, -r - 4);
+      ctx.lineTo(0, -r - 9);
+      ctx.lineTo(3, -r - 4);
+      ctx.lineTo(8, -r - 8);
+      ctx.lineTo(6, -r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#e02424';
+      ctx.fillRect(-1, -r - 4.5, 2, 2);
+    }
+
+    ctx.restore();
+
+    // 6. Placa con el nombre del piloto personalizada debajo
+    const nameText = FaceDriver.pilotName || 'PILOTO';
+    ctx.save();
+    const nw = Math.max(46, nameText.length * 6 + 10);
+    const nx = bx - nw / 2;
+    const ny = by + r + 4;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+    if (ctx.roundRect) {
+      ctx.beginPath(); ctx.roundRect(nx, ny, nw, 12, 5); ctx.fill();
+      ctx.strokeStyle = borderCol; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(nx, ny, nw, 12, 5); ctx.stroke();
+    } else {
+      ctx.fillRect(nx, ny, nw, 12);
+      ctx.strokeStyle = borderCol; ctx.lineWidth = 1;
+      ctx.strokeRect(nx, ny, nw, 12);
+    }
+
+    Text.ui(ctx, nameText, bx, ny + 1, 9, '#ffe060', 'center');
+    ctx.restore();
+  },
+
+  draw(ctx, race = null) {
+    if (!race && typeof Game !== 'undefined' && Game.current && Game.current.player) race = Game.current;
     const splitY = (typeof M7 !== 'undefined' && M7.SPLIT_Y) ? M7.SPLIT_Y : 320;
+
+    // Cámara de Reacciones del Piloto HUD (Arriba a la Izquierda)
+    this.drawPilotCam(ctx, race);
 
     // 计时器（右上）
     this.drawTimer(ctx);

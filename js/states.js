@@ -699,7 +699,7 @@ class Race {
     View.drawSprites(ctx, camDriver, this, showPlayerKart);
     View.drawMinimap(ctx, this);
     if (this.isBattle) Gui.drawBattle(ctx, this);
-    else Gui.draw(ctx);
+    else Gui.draw(ctx, this);
     if (this.flash > 0) {
       ctx.globalAlpha = this.flash;
       ctx.fillStyle = '#fff';
