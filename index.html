@@ -198,24 +198,70 @@
     margin: 6px 0 0;
     font-size: 13px;
     color: #a0d0ff;
+    color: #a0d0ff;
     letter-spacing: 0.5px;
+  }
+  .top-left-controls {
+    position: fixed;
+    top: 10px;
+    left: 12px;
+    z-index: 95;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .btn-ctrl {
+    background: rgba(16, 20, 36, 0.65);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    width: 42px;
+    height: 42px;
+    font-size: 20px;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    transition: transform 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+    user-select: none;
+  }
+  .btn-ctrl:hover {
+    transform: scale(1.1);
+    background: rgba(28, 36, 64, 0.85);
+    border-color: #ffd700;
+    box-shadow: 0 0 16px rgba(255, 215, 0, 0.6);
+  }
+  .btn-ctrl.is-muted {
+    background: rgba(60, 20, 20, 0.7);
+    border-color: #ff5050;
+    box-shadow: 0 0 12px rgba(255, 80, 80, 0.5);
   }
   .btn-close-modal {
     position: absolute;
     top: 10px;
     right: 14px;
+    z-index: 100;
+    pointer-events: auto;
     background: #d81818;
     color: #fff;
     border: 2px solid #fff;
     border-radius: 50%;
-    width: 32px;
-    height: 32px;
-    font-size: 16px;
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
     font-weight: bold;
     cursor: pointer;
-    box-shadow: 0 0 10px rgba(255, 0, 0, 0.6);
+    box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.1s, background 0.1s;
   }
-  .btn-close-modal:hover { background: #ff3333; }
+  .btn-close-modal:hover { background: #ff3333; transform: scale(1.1); }
 
   .selfie-body {
     display: flex;
@@ -646,6 +692,11 @@
 </style>
 </head>
 <body>
+<div class="top-left-controls">
+  <button id="btnAudioToggle" class="btn-ctrl" onclick="Sound.toggleMute()" title="Activar / Desactivar Sonido (M)" aria-label="Audio">🔊</button>
+  <button id="btnFullscreenToggle" class="btn-ctrl" onclick="Game.toggleFullscreen()" title="Pantalla Completa (F)" aria-label="Pantalla Completa">⛶</button>
+</div>
+
 <div class="top-bar" id="topBar">
   <button id="btnFloatingSelfie" class="btn-top-selfie" onclick="SelfieSetup.open()">📸 HAZTE UN SELFIE / TU CARA</button>
   <button id="btnToggleFullscreen" class="btn-top-fullscreen" onclick="Game.toggleFullscreen()">⛶ PANTALLA COMPLETA</button>
@@ -656,15 +707,15 @@
   <canvas id="game" width="512" height="448"></canvas>
 </div>
 
-<div id="hint">← → Girar · X / W / ↑ Gas · Z / S / ↓ Freno · C Salto/Derrape · E / Q Objeto · Enter OK · [F] Pantalla Completa</div>
+<div id="hint">← → Girar · X / W / ↑ Gas · Z / S / ↓ Freno · C Salto/Derrape · E / Q Objeto (↓+Objeto: soltar atrás) · Enter OK · [M] Audio · [F] Pantalla Completa</div>
 
 <!-- ========================================================
      MODAL DE CAPTURA DE SELFIE & PILOTO PERSONALIZADO
      ======================================================== -->
-<div id="selfieModal" class="hidden">
+<div id="selfieModal" class="hidden" onclick="if(event.target===this)SelfieSetup.close()">
   <div class="selfie-card">
     <div class="snes-checkers"></div>
-    <button id="selfieBtnClose" class="btn-close-modal" title="Cerrar">✕</button>
+    <button id="selfieBtnClose" class="btn-close-modal" title="Cerrar" onclick="SelfieSetup.close()">✕</button>
 
     <div class="selfie-header">
       <h2 class="selfie-title">🏁 SUPER MARIO KART · TU CARA 🏁</h2>

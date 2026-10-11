@@ -121,10 +121,10 @@ const Input = {
       case 'arrowright': case 'd': return ['right'];
       case 'w': case 'x': case 'arrowup': return ['accel', 'up'];
       case 's': case 'z': case 'arrowdown': return ['brake', 'down'];
-      case 'c': case 'shift': case ' ': return ['drift'];
+      case 'c': case 'shift': return ['drift'];
       case 'r': return ['r', 'restart'];
-      case 'e': return ['itemfront'];
-      case 'q': return ['itemback'];
+      case 'e': case 'q': case ' ': return ['item', 'itemfront'];
+      case 'm': return ['m', 'mute'];
       case 'enter': return ['accept'];
       case 'escape': return ['back'];
       default: return null;
@@ -296,6 +296,34 @@ const View = {
           camDriver.animator.draw(ctx, px, py, scale, {
             speedTurn: camDriver.speedTurn, height: camDriver.height
           });
+
+          // Rescate de Lakitu en su nube con caña de pescar al caer al agua o al vacío
+          if (camDriver.falling && camDriver._fallT > 0.35) {
+            const T = camDriver._fallT;
+            const kartHop = (camDriver.height || 0) * 2.5;
+            const lakituY = py - kartHop - 58;
+            const bobLakitu = Math.sin(T * 14) * 2.5;
+            const fIdx = Math.floor(T * 6) % 2;
+            const lakImg = (Gui.lakituRescue && Gui.lakituRescue[fIdx]) || Gui.lakituLapSign;
+            if (lakImg) {
+              ctx.save();
+              // Línea de pescar blanca/negra desde la caña de Lakitu hasta el enganche del kart
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.moveTo(px - 14, lakituY + 14 + bobLakitu);
+              ctx.lineTo(px, py - kartHop - 14);
+              ctx.stroke();
+
+              ctx.strokeStyle = '#000000';
+              ctx.lineWidth = 0.8;
+              ctx.stroke();
+
+              // Lakitu volando en su nube con la caña de pescar
+              ctx.drawImage(lakImg, px - 38, lakituY + bobLakitu, 68, 54);
+              ctx.restore();
+            }
+          }
         }
       });
     }
@@ -691,17 +719,18 @@ class BootState {
     ctx.fillRect(0, 0, 512, 448);
   }
   key(k) {
-    if (k === 'accept') this.t = Math.max(this.t, 206 / 60);
+    // Cualquier tecla avanza directamente al título
+    this.t = Math.max(this.t, 206 / 60);
   }
 }
 
 class TitleState {
   /* 原版首屏（移植start.cpp）：背景横向滚动 + SUPER MARIO KART大logo + 车队巡游
-   * 三模式：GP大奖赛 / MatchRace单挑 / Battle气球对战 */
+   * 三大纯正街机模式：GP大奖赛 / MatchRace单挑 / Battle气球对战 */
   init() {
     this.idx = 0;
-    this.options = ['mario kart gp', 'match race', 'battle', '📸 selfie / tu cara', '⛶ pantalla completa'];
-    this.modes = ['gp', 'race', 'battle', 'selfie', 'fullscreen'];
+    this.options = ['mario kart gp', 'match race', 'battle'];
+    this.modes = ['gp', 'race', 'battle'];
     this.scroll = 0;                 // 背景滚动位置（整图像素）
     this._age = 0;                   // 界面年龄帧：输入门控 + logo脉动节拍
     this.idle = 0;                   // 无输入计时：≥1602帧(26.7s)进attract演示
@@ -712,9 +741,7 @@ class TitleState {
       speed: 0.04 + Math.random() * 0.05,
       spriteIdx: i
     }));
-    // 右侧视角精灵预生成一次：minimapFrame(0)=getMinimapSprite(0)，内部+π/2落第9扇区
-    // →HIT_TEX_IDX[8]=帧7且不镜像（车头朝右）。viewFrame的镜像规则(a<π)与之相反，
-    // 会画出朝左的车——标题巡游必须用minimapFrame（见animator.js注释）
+    // 右侧视角精灵预生成一次：minimapFrame(0)=getMinimapSprite(0)
     this.driverFrames = CHARACTERS.map((c, i) => {
       const anim = new Animator(c.file.replace('drivers/', ''));
       if (i === Game.playerChar && typeof FaceDriver !== 'undefined' && FaceDriver.active) {
@@ -723,9 +750,8 @@ class TitleState {
       const mf = anim.minimapFrame(0);
       return { img: anim.driving[mf.frame], mirror: mf.mirror };
     });
-    // 从attract演示回到标题：恢复菜单主题（正常开机路径由BootState起过音乐，不重复）
-    if (Game.mode === 'attract') {
-      Game.mode = null;
+    // Garantizar que la música de la pantalla de inicio suene siempre
+    if (Sound.musicName !== 'music_menu' || !Sound.music) {
       Sound.playMusic('music_menu');
     }
   }
@@ -794,53 +820,38 @@ class TitleState {
       ctx.drawImage(lg, 6, 16, 234, 76, 256 - 234, 52, 468, 152);
     }
 
-    /* 菜单UI最后绘制：黑色半透明面板 + 选项文字 + 提示行 */
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(70, 108, 372, 280);
+    /* 菜单UI：黑色半透明面板 + 金色边框 + 3大经典模式 */
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(78, 206, 356, 172);
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(78, 206, 356, 172);
+
     const hints = [
       '4 cups · 20 tracks · grand prix',
       'single race · all 20 tracks',
-      'balloon battle · 4 arenas',
-      'foto selfie con webcam o imagen de tu cara',
-      'pantalla completa completa (o tecla F)'
+      'balloon battle · 4 arenas'
     ];
     this.options.forEach((o, i) => {
       const sel = i === this.idx;
-      Text.ui(ctx, (sel ? '▶ ' : '') + o.toUpperCase(), 256, 120 + i * 44, 18,
+      Text.ui(ctx, (sel ? '▶ ' : '') + o.toUpperCase(), 256, 222 + i * 48, 19,
               sel ? '#ffe060' : '#c0c0c0', 'center');
-      if (sel) Text.ui(ctx, hints[i], 256, 142 + i * 44, 11, '#8ab4ff', 'center');
+      if (sel) Text.ui(ctx, hints[i], 256, 246 + i * 48, 11, '#8ab4ff', 'center');
     });
-    // 提示行：本级输入门未开时显示wait...（对应原版淡入完成后~150帧才收输入）
-    Text.ui(ctx, this._age > 150 ? '↑↓ select · enter confirm · [f] pantalla completa' : 'wait...',
-            256, 404, 13, '#aaaaaa', 'center');
+
+    // 提示行
+    Text.ui(ctx, this._age > 80 ? '↑↓ SELECT · ENTER CONFIRM · [M] AUDIO' : 'WAIT...',
+            256, 396, 13, '#aaaaaa', 'center');
   }
   key(k) {
     this.idle = 0;                     // 任意按键清零attract计时
-    if (this._age <= 150) return;      // 本级输入门（叠加全局Fader淡入门控之外的第二道门）
+    if (k === 'm' || k === 'mute') { Sound.toggleMute(); return; }
+    if (this._age <= 40) return;       // Breve umbral de entrada inicial
     const len = this.options.length;
     if (k === 'up') { this.idx = (this.idx + len - 1) % len; Sound.play('sfx_menumove'); }
     if (k === 'down') { this.idx = (this.idx + 1) % len; Sound.play('sfx_menumove'); }
     if (k === 'accept') {
       Sound.play('sfx_menuselect');
-      if (this.modes[this.idx] === 'fullscreen') {
-        if (typeof Game !== 'undefined' && Game.toggleFullscreen) Game.toggleFullscreen();
-        return;
-      }
-      if (this.modes[this.idx] === 'selfie') {
-        if (typeof SelfieSetup !== 'undefined') {
-          SelfieSetup.open(() => {
-            this.driverFrames = CHARACTERS.map((c, i) => {
-              const anim = new Animator(c.file.replace('drivers/', ''));
-              if (i === Game.playerChar && typeof FaceDriver !== 'undefined' && FaceDriver.active) {
-                FaceDriver.applyToAnimator(anim, i);
-              }
-              const mf = anim.minimapFrame(0);
-              return { img: anim.driving[mf.frame], mirror: mf.mirror };
-            });
-          });
-        }
-        return;
-      }
       Game.mode = this.modes[this.idx];
       Game.gp = null;
       Game.transitionTo(new CCSelectState());
@@ -1375,10 +1386,10 @@ class RaceState {
     };
     if (Input.pressed('drift') && p.canDrive()) p.shortJump();
     const canUseItem = p.canDrive() && p.powerUp !== PowerUp.NONE && !Gui.roulette.active && GameClock.now() >= p.canUseItemAt;
-    if (Input.pressed('itemfront') && canUseItem)
-      useItem(p, this.race, true);
-    if (Input.pressed('itemback') && canUseItem)
-      useItem(p, this.race, false);
+    const isThrowBack = Input.down('brake') || Input.down('down');
+    if ((Input.pressed('item') || Input.pressed('itemfront') || Input.pressed('itemback')) && canUseItem) {
+      useItem(p, this.race, !isThrowBack);
+    }
     this.race.update(dt, input);
     Sound.updateEngine(clamp(p.speedForward / p.vehicle.maxNormalLinearSpeed, 0, 2));
   }
@@ -1386,6 +1397,7 @@ class RaceState {
     this.race.draw(ctx, this.race.player);
   }
   key(k) {
+    if (k === 'm' || k === 'mute') { Sound.toggleMute(); return; }
     if (k === 'r' || k === 'restart') {
       Sound.stopEngine();
       Sound.stopMusic();
@@ -1404,10 +1416,11 @@ class PauseState {
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(0, 0, 512, 448);
     Text.ui(ctx, 'PAUSE', 256, 180, 34, '#ffe060', 'center');
-    Text.ui(ctx, 'esc: resume · r: restart', 256, 244, 14, '#cccccc', 'center');
+    Text.ui(ctx, 'esc: resume · r: restart · m: audio', 256, 244, 14, '#cccccc', 'center');
     Text.ui(ctx, 'enter: quit race', 256, 268, 14, '#cccccc', 'center');
   }
   key(k) {
+    if (k === 'm' || k === 'mute') { Sound.toggleMute(); return; }
     if (k === 'r' || k === 'restart') {
       Sound.stopEngine();
       Sound.stopMusic();
@@ -1567,16 +1580,17 @@ class BattleState {
     };
     if (Input.pressed('drift') && p.canDrive()) p.shortJump();
     const canUseItem = p.canDrive() && p.powerUp !== PowerUp.NONE && !Gui.roulette.active && GameClock.now() >= p.canUseItemAt;
-    if (Input.pressed('itemfront') && canUseItem)
-      useItem(p, this.race, true);
-    if (Input.pressed('itemback') && canUseItem)
-      useItem(p, this.race, false);
+    const isThrowBack = Input.down('brake') || Input.down('down');
+    if ((Input.pressed('item') || Input.pressed('itemfront') || Input.pressed('itemback')) && canUseItem) {
+      useItem(p, this.race, !isThrowBack);
+    }
     this.race.update(dt, input);
     Sound.updateEngine(clamp(p.speedForward / p.vehicle.maxNormalLinearSpeed, 0, 2));
     if (this.race.over) Game.setState(new BattleEndState(this.race));
   }
   draw(ctx) { this.race.draw(ctx, this.race.player); }
   key(k) {
+    if (k === 'm' || k === 'mute') { Sound.toggleMute(); return; }
     if (k === 'r' || k === 'restart') {
       Sound.stopEngine();
       Sound.stopMusic();

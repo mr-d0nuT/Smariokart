@@ -127,12 +127,16 @@ class RedShell extends BaseItem {
 
     const shellSpeed = 0.52;
     if (!this.target || this.target.finished || (this.target.balloons !== undefined && this.target.balloons <= 0)) {
-      // Sin objetivo delante: vuela hacia adelante guiado por el trazado de la pista
+      // Sin objetivo delante: vuela hacia adelante guiado suavemente por el trazado de la pista
       const nd = AI.getNextDirection(this.position.x, this.position.y);
-      if (nd && isFinite(nd.x) && isFinite(nd.y)) {
-        const nm = Math.hypot(nd.x, nd.y) || 1;
-        this.vel.x = (nd.x / nm) * shellSpeed;
-        this.vel.y = (nd.y / nm) * shellSpeed;
+      if (nd && isFinite(nd.x) && isFinite(nd.y) && (nd.x !== 0 || nd.y !== 0)) {
+        const trackAng = Math.atan2(nd.y, nd.x);
+        const curAng = Math.atan2(this.vel.y, this.vel.x);
+        const dAng = normAngle(trackAng - curAng);
+        const maxTurn = 6.0 * dt;
+        const newAng = curAng + Math.max(-maxTurn, Math.min(maxTurn, dAng));
+        this.vel.x = Math.cos(newAng) * shellSpeed;
+        this.vel.y = Math.sin(newAng) * shellSpeed;
       }
       this.position.x += this.vel.x * dt;
       this.position.y += this.vel.y * dt;
@@ -159,7 +163,8 @@ class RedShell extends BaseItem {
         }
         const curAng = Math.atan2(this.vel.y, this.vel.x);
         const dAng = normAngle(desiredAng - curAng);
-        const maxTurn = 14.0 * dt;
+        // Si el objetivo de repente queda detrás, no girar en redondo hacia atrás
+        const maxTurn = (Math.abs(dAng) < Math.PI * 0.75) ? (14.0 * dt) : (4.0 * dt);
         const newAng = curAng + Math.max(-maxTurn, Math.min(maxTurn, dAng));
         this.vel.x = Math.cos(newAng) * shellSpeed;
         this.vel.y = Math.sin(newAng) * shellSpeed;
@@ -220,10 +225,9 @@ function useItem(user, race, isFront) {
             if (d === user || d.finished) continue;
             const dx = d.position.x - user.position.x;
             const dy = d.position.y - user.position.y;
-            const dVal = (d.lastGradient >= 0) ? d.lastGradient : AI.posValue(d.position.x, d.position.y);
-            const dProg = d.laps * 1024 + (1024 - dVal);
-            const inFrontOfUser = (dProg > userProg) || (dx * fwdX + dy * fwdY > 0);
-            if (inFrontOfUser) {
+            const dotFwd = dx * fwdX + dy * fwdY;
+            // Solo rivales que estén geométricamente por delante en el vector visual/marcha
+            if (dotFwd > 0.005) {
               const distSq = dx * dx + dy * dy;
               if (distSq < bestDist) {
                 bestDist = distSq;

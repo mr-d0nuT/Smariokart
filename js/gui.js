@@ -97,12 +97,18 @@ const Gui = {
       this.lakituLights.push(Assets.slice('lakitu', { x: 1 + i * 41, y: 1, w: 40, h: 32 }));
     this.lakituLapSign = Assets.slice('lakitu', { x: 3, y: 68, w: 40, h: 32 });
     this.lakituFinish = Assets.slice('lakitu', { x: 89, y: 34, w: 40, h: 32 });
+    // Lake佬钓鱼救援原版切片（两帧飞行动画）
+    this.lakituRescue = [
+      Assets.slice('lakitu', { x: 1, y: 34, w: 40, h: 32 }),
+      Assets.slice('lakitu', { x: 42, y: 34, w: 40, h: 32 })
+    ];
   },
 
   reset() {
     this.time = 0; this.coins = 0; this.rank = 1;
     this.itemIcon = 0; this.roulette = { active: false, t: 0, finalItem: 0 };
     this.lapMsg = null; this.wrongDir = false;
+    this.wrongAlarmTimer = 0;
   },
   setItem(pu) {
     if (!this.roulette.active) this.itemIcon = pu;
@@ -127,6 +133,17 @@ const Gui = {
     if (this.lapMsg) {
       this.lapMsg.t -= dt;
       if (this.lapMsg.t <= 0) this.lapMsg = null;
+    }
+
+    // Alarma rítmica de sentido contrario / Wrong Way
+    if (this.wrongDir) {
+      this.wrongAlarmTimer = (this.wrongAlarmTimer || 0) - dt;
+      if (this.wrongAlarmTimer <= 0) {
+        Sound.play('sfx_lakituwarning', { volume: 0.85 });
+        this.wrongAlarmTimer = 0.55;
+      }
+    } else {
+      this.wrongAlarmTimer = 0;
     }
   },
 
@@ -212,9 +229,31 @@ const Gui = {
       ctx.globalAlpha = 1;
     }
 
-    // 逆行警告
-    if (this.wrongDir && ((this.time * 3 | 0) % 2 === 0)) {
-      Text.write(ctx, 'wrong way!', 256, 120, 3, '#ff5050', 'center');
+    // 逆行警告（Cartel arcade retro con destello e impacto visual）
+    if (this.wrongDir) {
+      const flash = (this.time * 4 | 0) % 2 === 0;
+      ctx.save();
+      // Lakitu con el cartel de marcha atrás
+      const lakSign = this.lakituLapSign;
+      if (lakSign) {
+        ctx.drawImage(lakSign, 256 - 28, 28, 56, 45);
+      }
+      const bw = 260, bh = 46, bx = 256 - bw / 2, by = 76;
+      // Fondo rojo con sombra
+      ctx.fillStyle = flash ? 'rgba(220, 20, 20, 0.95)' : 'rgba(140, 10, 10, 0.90)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = flash ? '#ffd700' : '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(bx, by, bw, bh);
+
+      // Franjas de precaución amarillas
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(bx, by, 8, bh);
+      ctx.fillRect(bx + bw - 8, by, 8, bh);
+
+      Text.ui(ctx, '⛔ WRONG WAY! ⛔', 256, by + 4, 18, flash ? '#ffffff' : '#ffd700', 'center');
+      Text.ui(ctx, '¡SENTIDO CONTRARIO!', 256, by + 26, 11, '#ffffff', 'center');
+      ctx.restore();
     }
   },
   /* 气球对战HUD：顶部倒计时 + 双侧气球计数 */

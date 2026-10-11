@@ -288,6 +288,7 @@ class Driver {
       this.steerProgress = Math.max(0, this.steerProgress - dt * 5.5);
       this.speedTurn *= Math.exp(-9.0 * dt);
       if (Math.abs(this.speedTurn) < 0.001) this.speedTurn = 0;
+      if (Math.abs(this.speedTurn) < 0.05) this.animator.goForward();
       this.lateralSlip *= 0.82;
       if (Math.abs(this.lateralSlip) < 0.001) this.lateralSlip = 0;
     }
@@ -604,9 +605,11 @@ class Driver {
     if (this.has(DS.UNCONTROLLED)) {
       this.animator.hit();
     } else if (!this.has(DS.STOPPED)) {
-      if (this.height === 0 && this.animator.state !== 'hit') this.animator.goForward();
       if (this.controlType === 'player') accel = this.playerControls(accel, input, now);
-      else accel = this.aiControls(accel, race, now);
+      else {
+        if (this.height === 0 && this.animator.state !== 'hit') this.animator.goForward();
+        accel = this.aiControls(accel, race, now);
+      }
     }
 
     accel *= 1 + POS_ACC_BONUS * this.rank;

@@ -119,17 +119,23 @@ const FaceDriver = (() => {
       }
       // 4. Si son vistas frontales (8 a 11):
       else {
-        // Encarando a la cámara: aquí va el selfie frontal integrado bajo la visera
-        let cx = 64, cy = 56, fw = 42, fh = 40;
-        if (f === 11) { cx = 64; cy = 56; fw = 42; fh = 40; } // Frontal directo
-        else if (f === 10) { cx = 66; cy = 56; fw = 40; fh = 40; }
-        else if (f === 9) { cx = 68; cy = 56; fw = 38; fh = 40; }
-        else if (f === 8) { cx = 70; cy = 56; fw = 36; fh = 40; }
+        // Encarando a la cámara: aquí va el selfie frontal ampliado (Modo Cabezón Arcade)
+        let cx = 64, cy = 54, fw = 76, fh = 68;
+        if (f === 11) { cx = 64; cy = 54; fw = 76; fh = 68; } // Frontal directo
+        else if (f === 10) { cx = 66; cy = 54; fw = 74; fh = 68; }
+        else if (f === 9) { cx = 68; cy = 54; fw = 72; fh = 68; }
+        else if (f === 8) { cx = 70; cy = 54; fw = 70; fh = 68; }
+
+        // Borrar el rostro original del personaje para que no se superponga por debajo
+        fctx.clearRect(28, 32, 72, 48);
 
         // Dibujar el selfie con recorte suave en el óvalo de la cara
         fctx.save();
         fctx.imageSmoothingEnabled = true;
         fctx.imageSmoothingQuality = 'high';
+        fctx.beginPath();
+        fctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+        fctx.clip();
         fctx.drawImage(userFaceCanvas, cx - fw / 2, cy - fh / 2, fw, fh);
         fctx.restore();
 
@@ -175,10 +181,13 @@ const FaceDriver = (() => {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(origSlice, 0, 0, 32, 32, 4, 4, 40, 40);
 
+    // Borrar cara original
+    ctx.clearRect(10, 14, 28, 20);
+
     // Integrar el selfie en el área de la cara
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(userFaceCanvas, 14, 14, 20, 20);
+    ctx.drawImage(userFaceCanvas, 10, 14, 28, 24);
 
     // Gorra auténtica de Nintendo por encima
     ctx.imageSmoothingEnabled = false;
@@ -214,10 +223,13 @@ const FaceDriver = (() => {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(origSlice, 0, 0, 32, 32, 12, 12, 104, 104);
 
+    // Borrar cara original
+    ctx.clearRect(28, 34, 72, 48);
+
     // Integrar la cara con el recorte oval suave
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(userFaceCanvas, 42, 42, 44, 42);
+    ctx.drawImage(userFaceCanvas, 28, 34, 72, 64);
 
     // Gorra auténtica de Nintendo por encima
     ctx.imageSmoothingEnabled = false;

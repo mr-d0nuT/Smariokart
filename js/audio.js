@@ -10,15 +10,65 @@ const Sound = {
   music: null, musicName: '', musicGain: null, musicLoop: true,
   engines: [],       // 每个车手一个引擎声部
   sfxCache: {},
+  muted: false,
+  _pendingMusic: '',
+  _listenersSet: false,
 
   init() {
     if (this.ctx) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;   // 无音频环境（如Node测试）
-    this.ctx = new AC();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
-    this.master.connect(this.ctx.destination);
+    try {
+      this.muted = typeof localStorage !== 'undefined' && localStorage.getItem('smk_audio_muted') === '1';
+    } catch (e) { this.muted = false; }
+
+    const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+    if (AC) {
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.muted ? 0 : 0.5;
+      this.master.connect(this.ctx.destination);
+    }
+
+    if (typeof window !== 'undefined' && !this._listenersSet) {
+      this._listenersSet = true;
+      const unlock = () => { this.resume(); };
+      ['click', 'pointerdown', 'touchstart', 'keydown', 'mousedown'].forEach(ev => {
+        window.addEventListener(ev, unlock, { passive: true });
+      });
+    }
+    this.updateMuteUI();
+  },
+
+  toggleMute() {
+    this.init();
+    this.muted = !this.muted;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('smk_audio_muted', this.muted ? '1' : '0');
+      }
+    } catch (e) {}
+
+    if (this.master) {
+      this.master.gain.value = this.muted ? 0 : 0.5;
+    }
+    if (this.music && this.isFile()) {
+      this.music.volume = this.muted ? 0 : 0.55;
+    }
+    if (!this.muted) {
+      this.resume();
+    }
+    this.updateMuteUI();
+    return this.muted;
+  },
+
+  updateMuteUI() {
+    if (typeof document === 'undefined') return;
+    const btn = document.getElementById('btnAudioToggle');
+    if (btn) {
+      btn.textContent = this.muted ? '🔇' : '🔊';
+      if (btn.classList && btn.classList.toggle) {
+        btn.classList.toggle('is-muted', this.muted);
+      }
+    }
   },
 
   /* 浏览器手势策略：必须在用户交互后恢复 */
@@ -27,7 +77,17 @@ const Sound = {
 
   resume() {
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
+      this.ctx.resume().catch(() => {}).then(() => {
+        if (this._pendingMusic) {
+          const m = this._pendingMusic;
+          this._pendingMusic = '';
+          this.playMusic(m);
+        }
+      });
+    } else if (this._pendingMusic) {
+      const m = this._pendingMusic;
+      this._pendingMusic = '';
+      this.playMusic(m);
     }
   },
 
@@ -40,7 +100,6 @@ const Sound = {
       tries++;
       const p = makeElem().play();
       if (p && p.catch) p.catch(() => {});
-      // 成功判定：元素未暂停即认为已出声
       if (tries > 40 || !this._lastElemPaused) {}
     }, 800);
   },
@@ -50,34 +109,47 @@ const Sound = {
   },
   play(name, { loop = false, volume = 1.0, rate = 1.0 } = {}) {
     this.init();
-    if (this.isFile()) {
-      // file:// 回退：HTMLAudio元素直放；被拒时入重试队列直到用户交互解锁
-      const a = new Audio(this.sfxPath(name));
-      a.volume = volume * 0.6; a.playbackRate = rate;
-      const p = a.play();
-      if (p && p.catch) p.catch(err => {
-        if (err && err.name === 'NotAllowedError' && !this._retryTimers['sfx:' + name]) {
-          this._retryTimers['sfx:' + name] = setInterval(() => {
-            const q = a.play();
-            if (q && q.catch) q.catch(() => {});
-            if (!a.paused) { clearInterval(this._retryTimers['sfx:' + name]); delete this._retryTimers['sfx:' + name]; }
-          }, 700);
-        }
-      });
-      return { src: { stop() { a.pause(); } }, g: { get gain() { return { get value() { return a.volume; }, set value(v) { a.volume = v; } }; } } };
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.resume();
     }
-    if (!this.ctx) return null;
+    const finalVol = this.muted ? 0 : volume;
+
+    if (this.isFile() || !this.ctx || !Assets.audio[name]) {
+      // file:// 回退或无WebAudio缓存：HTMLAudio元素直放
+      try {
+        const a = new Audio(this.sfxPath(name));
+        a.volume = finalVol * 0.6;
+        a.playbackRate = rate;
+        const p = a.play();
+        if (p && p.catch) p.catch(err => {
+          if (err && err.name === 'NotAllowedError' && !this._retryTimers['sfx:' + name]) {
+            this._retryTimers['sfx:' + name] = setInterval(() => {
+              const q = a.play();
+              if (q && q.catch) q.catch(() => {});
+              if (!a.paused) { clearInterval(this._retryTimers['sfx:' + name]); delete this._retryTimers['sfx:' + name]; }
+            }, 700);
+          }
+        });
+        return { src: { stop() { a.pause(); } }, g: { get gain() { return { get value() { return a.volume; }, set value(v) { a.volume = v; } }; } } };
+      } catch (e) {
+        return null;
+      }
+    }
     const buf = Assets.audio[name];
     if (!buf) return null;
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    src.loop = loop;
-    src.playbackRate.value = rate;
-    const g = this.ctx.createGain();
-    g.gain.value = volume;
-    src.connect(g).connect(this.master);
-    src.start();
-    return { src, g };
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = loop;
+      src.playbackRate.value = rate;
+      const g = this.ctx.createGain();
+      g.gain.value = finalVol;
+      src.connect(g).connect(this.master);
+      src.start();
+      return { src, g };
+    } catch (e) {
+      return null;
+    }
   },
 
   stop(handle) {
@@ -92,39 +164,47 @@ const Sound = {
   },
   playMusic(name) {
     this.init();
-    if (this.isFile()) {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this._pendingMusic = name;
+    }
+
+    if (this.isFile() || !this.ctx || !Assets.audio[name]) {
       this.stopMusic();
       this.musicName = name;
       const file = this.MUSIC_FILES[name] || window.__circuitMusic || 'music/menu_title_screen.ogg';
-      const a = new Audio(ASSET_ROOT + file);
-      a.loop = true; a.volume = 0.55;
-      this.music = a;
-      const p = a.play();
-      if (p && p.catch) p.catch(err => {
-        // 自动播放被拒：等用户任意交互后自动重试，直到真正出声
-        if (!this._bgmRetry) {
-          this._bgmRetry = setInterval(() => {
-            const q = a.play();
-            if (q && q.catch) q.catch(() => {});
-            if (!a.paused) { clearInterval(this._bgmRetry); this._bgmRetry = null; }
-          }, 700);
-        }
-      });
-      this.musicGain = { gain: { get value() { return a.volume; }, set value(v) { a.volume = v; } } };
+      try {
+        const a = new Audio(ASSET_ROOT + file);
+        a.loop = true;
+        a.volume = this.muted ? 0 : 0.55;
+        this.music = a;
+        const p = a.play();
+        if (p && p.catch) p.catch(err => {
+          if (!this._bgmRetry) {
+            this._bgmRetry = setInterval(() => {
+              const q = a.play();
+              if (q && q.catch) q.catch(() => {});
+              if (!a.paused) { clearInterval(this._bgmRetry); this._bgmRetry = null; }
+            }, 700);
+          }
+        });
+        this.musicGain = { gain: { get value() { return a.volume; }, set value(v) { a.volume = v; } } };
+      } catch (e) {}
       return;
     }
-    if (!this.ctx) return;
+
     if (this.musicName === name && this.music) return;
     this.stopMusic();
     this.musicName = name;
     if (!Assets.audio[name]) return;
-    this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.55;
-    this.music = this.ctx.createBufferSource();
-    this.music.buffer = Assets.audio[name];
-    this.music.loop = true;
-    this.music.connect(this.musicGain).connect(this.master);
-    this.music.start();
+    try {
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = 0.55;
+      this.music = this.ctx.createBufferSource();
+      this.music.buffer = Assets.audio[name];
+      this.music.loop = true;
+      this.music.connect(this.musicGain).connect(this.master);
+      this.music.start();
+    } catch (e) {}
   },
   stopMusic() {
     if (this.music && this.music.pause) try { this.music.pause(); } catch (e) {}

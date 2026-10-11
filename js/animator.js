@@ -59,24 +59,39 @@ class Animator {
     return { frame: 0, mirror: false };
   }
 
-  /* 玩家帧选择（移植 update 的 GO_RIGHT/GO_LEFT 分支） */
+  /* 玩家帧选择：Giro suave con histéresis y transición fluida sin parpadeos */
   pickFrame(speedTurn) {
     if (this.state === 'hit') {
       this.hitPos = (this.hitPos + 2) % 32;
       return { frame: HIT_TEX_IDX[this.hitPos], mirror: this.hitPos > 16 };
     }
     if (this.state === 'fall') return { frame: 0, mirror: false };
-    if (this.state === 'right') {
-      if (speedTurn < 0.25) return { frame: 1, mirror: false };
-      if (speedTurn < 0.5) return { frame: 2, mirror: false };
-      return { frame: this.drifting ? 4 : 3, mirror: false };
+
+    const absTurn = Math.abs(speedTurn);
+    const isLeft = (this.state === 'left') || (this.state === 'fwd' && speedTurn < -0.06);
+    const isRight = (this.state === 'right') || (this.state === 'fwd' && speedTurn > 0.06);
+
+    if (!isLeft && !isRight && absTurn < 0.05) {
+      this._lastTurnFrame = 0;
+      return { frame: 0, mirror: false };
     }
-    if (this.state === 'left') {
-      if (speedTurn > -0.25) return { frame: 1, mirror: true };
-      if (speedTurn > -0.5) return { frame: 2, mirror: true };
-      return { frame: this.drifting ? 4 : 3, mirror: true };
+
+    // Histéresis sobre _lastTurnFrame para evitar oscilaciones en los umbrales
+    const curF = this._lastTurnFrame || 0;
+    let targetF = 0;
+    if (absTurn < (curF === 1 ? 0.05 : 0.09)) {
+      targetF = 0;
+    } else if (absTurn < (curF === 2 ? 0.22 : 0.28)) {
+      targetF = 1;
+    } else if (absTurn < (curF === 3 ? 0.44 : 0.52)) {
+      targetF = 2;
+    } else {
+      targetF = this.drifting ? 4 : 3;
     }
-    return { frame: 0, mirror: false };
+    this._lastTurnFrame = targetF;
+
+    if (targetF === 0) return { frame: 0, mirror: false };
+    return { frame: targetF, mirror: isLeft };
   }
 
   /* 对手车视角帧（移植 setViewSprite：相对角->32向查表） */
@@ -99,8 +114,8 @@ class Animator {
     if (this.smallTime > 0) this.smallTime -= dt;
     if (this.smashTime > 0) this.smashTime -= dt;
     if (this.state === 'fall') this.fallScale *= 0.92;
-    // 行驶颠簸
-    this.bobTime += dt * (2 + speedForward * 260);
+    // 行驶颠簸: vibración natural suave de motor
+    this.bobTime += dt * (3 + speedForward * 14);
   }
 
   reset() {
@@ -111,6 +126,7 @@ class Animator {
     this.hitPos = 0;
     this.fallScale = 1;
     this.bobTime = 0;
+    this._lastTurnFrame = 0;
   }
 
   /* 绘制：x中心 y底部 baseScale为像素比例(2=玩家) */
@@ -122,21 +138,22 @@ class Animator {
     if (this.smashTime > 0) h *= 0.5;
     if (this.state === 'fall') { w *= this.fallScale; h *= this.fallScale; }
     const hopY = (opts.height || 0) * 2.5;
-    const bob = (opts.height || 0) > 0 ? 0 :
-      Math.sin(this.bobTime * Math.PI * 2) * 0.4 * baseScale;
+    const bob = (opts.height || 0) > 0 ? 0 : Math.sin(this.bobTime * Math.PI * 2) * 0.45;
+    const drawX = Math.round(x);
+    const drawY = Math.round(y + bob - hopY);
 
     ctx.save();
     if (hopY > 0) {
       // Sombra proyectada en el suelo durante el salto (física visual auténtica)
       ctx.save();
-      ctx.translate(x, y);
+      ctx.translate(drawX, y);
       ctx.fillStyle = 'rgba(0,0,0,0.38)';
       ctx.beginPath();
       ctx.ellipse(0, -2, Math.max(8, w * 0.32), Math.max(3, h * 0.10), 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
-    ctx.translate(x, y + bob - hopY);
+    ctx.translate(drawX, drawY);
     if (f.mirror) ctx.scale(-1, 1);
 
     const prevSmooth = ctx.imageSmoothingEnabled;

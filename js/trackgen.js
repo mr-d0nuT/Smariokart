@@ -81,8 +81,31 @@ const TRACKGEN_MUSIC = {
  * startTheta选右端点(θ≈0)使发车朝向接近向上(-π/2) */
 const TRACKGEN_SPECS = {
   mario_circuit_1: { theme:'circuit', name:'mario circuit 1',
-    cx:512, cy:512, rx:330, ry:240, rot:-4, harm:[[1,0.10,20]],
-    width:56, pipes:[[300,300],[730,560]], panelsEvery:150 },
+    width:50, panelsEvery:140,
+    pipes:[[175,380],[225,480],[175,540],[450,720]],
+    waypoints:[
+      {x: 780, y: 500}, // Start/finish line heading North
+      {x: 780, y: 360},
+      {x: 780, y: 240},
+      {x: 740, y: 170},
+      {x: 660, y: 150},
+      {x: 500, y: 150},
+      {x: 340, y: 150},
+      {x: 230, y: 190},
+      {x: 190, y: 280},
+      {x: 190, y: 420},
+      {x: 190, y: 560},
+      {x: 240, y: 650},
+      {x: 340, y: 670},
+      {x: 430, y: 670},
+      {x: 490, y: 720},
+      {x: 510, y: 790},
+      {x: 560, y: 840},
+      {x: 660, y: 840},
+      {x: 740, y: 800},
+      {x: 780, y: 720},
+      {x: 780, y: 620}
+    ] },
   choco_island_1: { theme:'choco', name:'choco island 1',
     cx:512, cy:512, rx:340, ry:230, rot:8, harm:[[2,0.22,40],[1,-0.06,0]],
     width:54, panelsEvery:140 },
@@ -168,12 +191,55 @@ const TRACKGEN_BATTLES = {
     walls:[[48,48,32,32],[24,24,10,10],[94,24,10,10],[24,94,10,10],[94,94,10,10]] },
 };
 
-/* ================= 采样与距离场 ================= */
-/* 极坐标谐波闭环 → 密集中心线采样点(行进方向使起点切线朝上) */
+function catmullRomPoint(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+/* 极坐标谐波闭环 / Catmull-Rom闭环 → 密集中心线采样点(行进方向使起点切线朝上) */
 function trackGenSamples(def) {
   const pts = [];
-  const rot = (def.rot || 0) * Math.PI / 180;
   const N = 720;
+  if (def.waypoints && def.waypoints.length >= 3) {
+    const wps = def.waypoints;
+    const M = wps.length;
+    const segLens = [];
+    let totalLen = 0;
+    for (let i = 0; i < M; i++) {
+      const a = wps[i], b = wps[(i + 1) % M];
+      const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      segLens.push(l);
+      totalLen += l;
+    }
+    for (let i = 0; i <= N; i++) {
+      const targetDist = (i / N) * totalLen;
+      let accum = 0, segIdx = 0, localT = 0;
+      for (let s = 0; s < M; s++) {
+        if (accum + segLens[s] >= targetDist || s === M - 1) {
+          segIdx = s;
+          localT = segLens[s] > 0 ? (targetDist - accum) / segLens[s] : 0;
+          break;
+        }
+        accum += segLens[s];
+      }
+      localT = Math.max(0, Math.min(1, localT));
+      const p0 = wps[(segIdx - 1 + M) % M];
+      const p1 = wps[segIdx];
+      const p2 = wps[(segIdx + 1) % M];
+      const p3 = wps[(segIdx + 2) % M];
+      pts.push({
+        x: catmullRomPoint(p0.x, p1.x, p2.x, p3.x, localT),
+        y: catmullRomPoint(p0.y, p1.y, p2.y, p3.y, localT)
+      });
+    }
+    return pts;
+  }
+  const rot = (def.rot || 0) * Math.PI / 180;
   // θ从+ε递减扫一整圈: 右端点出发逆时针(屏幕系)→切线朝上
   const harms = def.harm || [];
   for (let i = 0; i <= N; i++) {
