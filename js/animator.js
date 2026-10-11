@@ -76,6 +76,11 @@ class Animator {
       return { frame: 0, mirror: false };
     }
 
+    if (this.drifting) {
+      this._lastTurnFrame = 4;
+      return { frame: 4, mirror: isLeft };
+    }
+
     // Histéresis sobre _lastTurnFrame para evitar oscilaciones en los umbrales
     const curF = this._lastTurnFrame || 0;
     let targetF = 0;
@@ -86,7 +91,7 @@ class Animator {
     } else if (absTurn < (curF === 3 ? 0.44 : 0.52)) {
       targetF = 2;
     } else {
-      targetF = this.drifting ? 4 : 3;
+      targetF = 3;
     }
     this._lastTurnFrame = targetF;
 

@@ -240,6 +240,211 @@
     border-color: #ff5050;
     box-shadow: 0 0 12px rgba(255, 80, 80, 0.5);
   }
+  .btn-ctrl-donut {
+    padding: 0;
+    overflow: hidden;
+  }
+  .btn-ctrl-donut:hover {
+    border-color: #ffd700;
+    box-shadow: 0 0 18px rgba(255, 215, 0, 0.8);
+  }
+
+  /* ============================================================
+   * CONTROLES TÁCTILES MÓVILES / TABLET (JOYSTICK & BOTONERA ARCADE)
+   * ============================================================ */
+  .mobile-controls {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 85;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body.has-touch-controls .mobile-controls {
+    display: flex;
+  }
+
+  @media (hover: none) and (pointer: coarse), (max-width: 900px) {
+    .mobile-controls {
+      display: flex;
+    }
+    #hint {
+      display: none !important;
+    }
+  }
+
+  /* Zona Izquierda: Joystick Virtual */
+  .touch-zone-left {
+    position: absolute;
+    bottom: 18px;
+    left: 18px;
+    width: 145px;
+    height: 145px;
+    pointer-events: auto;
+    touch-action: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .touch-joy-base {
+    position: relative;
+    width: 126px;
+    height: 126px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(16, 24, 48, 0.65) 0%, rgba(8, 12, 28, 0.88) 100%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 2.5px solid rgba(0, 210, 255, 0.5);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.75), inset 0 0 15px rgba(0, 210, 255, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .joy-guide {
+    position: absolute;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 11px;
+    font-weight: 900;
+    pointer-events: none;
+  }
+  .joy-guide-u { top: 6px; }
+  .joy-guide-d { bottom: 6px; }
+  .joy-guide-l { left: 8px; }
+  .joy-guide-r { right: 8px; }
+
+  .touch-joy-knob {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #00d2ff, #0055cc 75%, #002266 100%);
+    border: 2.5px solid #ffffff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 210, 255, 0.65);
+    pointer-events: none;
+    will-change: transform;
+    transition: transform 0.05s linear;
+  }
+
+  /* Zona Central: Start / Menú */
+  .touch-zone-center {
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: auto;
+  }
+  .touch-btn-pill {
+    background: rgba(16, 20, 36, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 2px solid rgba(255, 215, 0, 0.55);
+    border-radius: 20px;
+    color: #ffd700;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    padding: 6px 18px;
+    cursor: pointer;
+    touch-action: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+    outline: none;
+  }
+  .touch-btn-pill.active {
+    transform: scale(0.94);
+    background: #ffd700;
+    color: #000;
+  }
+
+  /* Zona Derecha: Botonera Diamante Arcade */
+  .touch-zone-right {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 180px;
+    height: 180px;
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  .touch-btn {
+    position: absolute;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    outline: none;
+    border: 2.5px solid #fff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.75);
+    transition: transform 0.08s, filter 0.08s;
+  }
+  .touch-btn.active {
+    transform: scale(0.91);
+    filter: brightness(1.3);
+  }
+
+  .touch-btn .btn-lbl {
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.1;
+    color: #fff;
+    text-shadow: 0 1px 3px #000;
+  }
+  .touch-btn .btn-sub {
+    font-size: 9px;
+    font-weight: 800;
+    opacity: 0.85;
+    color: #fff;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  /* GAS (A - Abajo Derecha) */
+  .btn-gas {
+    width: 70px;
+    height: 70px;
+    bottom: 0px;
+    right: 0px;
+    background: radial-gradient(circle at 35% 35%, #2ed573, #10ac84 75%, #05664a 100%);
+    box-shadow: 0 0 16px rgba(46, 213, 115, 0.75), 0 6px 16px rgba(0, 0, 0, 0.8);
+  }
+
+  /* SALTO / DERRAPE (R - Arriba Derecha) */
+  .btn-drift {
+    width: 60px;
+    height: 60px;
+    top: 0px;
+    right: 12px;
+    background: radial-gradient(circle at 35% 35%, #00d2ff, #0077ff 75%, #003e99 100%);
+    box-shadow: 0 0 15px rgba(0, 210, 255, 0.75), 0 5px 14px rgba(0, 0, 0, 0.8);
+  }
+
+  /* ITEM (L - Arriba Izquierda) */
+  .btn-item {
+    width: 58px;
+    height: 58px;
+    top: 14px;
+    left: 8px;
+    background: radial-gradient(circle at 35% 35%, #ffd32a, #ff9f1a 75%, #b36b00 100%);
+    box-shadow: 0 0 15px rgba(255, 211, 42, 0.75), 0 5px 14px rgba(0, 0, 0, 0.8);
+  }
+
+  /* FRENO (B - Abajo Izquierda) */
+  .btn-brake {
+    width: 56px;
+    height: 56px;
+    bottom: 10px;
+    left: 18px;
+    background: radial-gradient(circle at 35% 35%, #ff4757, #c0392b 75%, #7a1f16 100%);
+    box-shadow: 0 0 14px rgba(255, 71, 87, 0.75), 0 5px 14px rgba(0, 0, 0, 0.8);
+  }
   .btn-close-modal {
     position: absolute;
     top: 10px;
@@ -693,14 +898,16 @@
 </head>
 <body>
 <div class="top-left-controls">
+  <button id="btnDonutBadge" class="btn-ctrl btn-ctrl-donut" title="Acerca de mr_d0nuT" aria-label="mr_d0nuT">
+    <img id="imgDonutIcon" alt="dOnuT" style="width:26px;height:26px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">
+  </button>
   <button id="btnAudioToggle" class="btn-ctrl" onclick="Sound.toggleMute()" title="Activar / Desactivar Sonido (M)" aria-label="Audio">🔊</button>
   <button id="btnFullscreenToggle" class="btn-ctrl" onclick="Game.toggleFullscreen()" title="Pantalla Completa (F)" aria-label="Pantalla Completa">⛶</button>
+  <button id="btnToggleAspect" class="btn-ctrl" onclick="Game.toggleAspectMode()" title="Formato de Pantalla (4:3 / 16:9 / 8:7)" aria-label="Proporción">📺</button>
 </div>
 
 <div class="top-bar" id="topBar">
   <button id="btnFloatingSelfie" class="btn-top-selfie" onclick="SelfieSetup.open()">📸 HAZTE UN SELFIE / TU CARA</button>
-  <button id="btnToggleFullscreen" class="btn-top-fullscreen" onclick="Game.toggleFullscreen()">⛶ PANTALLA COMPLETA</button>
-  <button id="btnToggleAspect" class="btn-top-aspect" onclick="Game.toggleAspectMode()" title="Cambiar proporción de pantalla">📺 4:3 (CRT)</button>
 </div>
 
 <div id="wrap">
@@ -831,6 +1038,7 @@
 <script src="js/trackgen.js"></script>
 <script src="js/states.js"></script>
 <script src="js/main.js"></script>
+<script src="js/touchcontrols.js"></script>
 <!-- ===== dOnuT badge · mr_d0nuT ===== -->
 <script>
 /* Distintivo de autoría de mr_d0nuT: botón flotante con el dónut que abre
@@ -914,14 +1122,21 @@
   function mount() {
     document.head.appendChild(css);
     document.body.appendChild(modal);
-    var existing = findExisting();
-    if (existing) {
-      existing.style.cursor = 'pointer';
-      existing.title = 'mr_d0nuT';
-      existing.addEventListener('click', function () { show(true); });
+    var btnDonut = document.getElementById('btnDonutBadge');
+    if (btnDonut) {
+      var img = document.getElementById('imgDonutIcon');
+      if (img) img.src = IMG;
+      btnDonut.addEventListener('click', function () { show(true); });
     } else {
-      document.body.appendChild(badge);
-      badge.addEventListener('click', function () { show(true); });
+      var existing = findExisting();
+      if (existing) {
+        existing.style.cursor = 'pointer';
+        existing.title = 'mr_d0nuT';
+        existing.addEventListener('click', function () { show(true); });
+      } else {
+        document.body.appendChild(badge);
+        badge.addEventListener('click', function () { show(true); });
+      }
     }
     modal.addEventListener('click', function (e) {
       if (!e.target.closest('#dnt-card') || e.target.id === 'dnt-x') show(false);

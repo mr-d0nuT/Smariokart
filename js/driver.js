@@ -96,6 +96,11 @@ class Driver {
     this.speedForward = 0; this.speedTurn = 0;
     this.lateralSlip = 0;              // Deslizamiento lateral inercial (agarre y derrape)
     this.isDrifting = false;
+    this.driftDirection = 0;           // -1 = izquierda, +1 = derecha
+    this.driftTime = 0;
+    this.driftSkidTimer = 0;
+    this.isJumping = false;
+    this._lastInput = null;
     this.vectorialSpeed = { x: 0, y: 0 };
     this.collisionMomentum = { x: 0, y: 0 };
 
@@ -169,10 +174,15 @@ class Driver {
     this.animator.smallTime = duration;
   }
   shortJump() {
-    if (this.height === 0) {
+    if (this.height === 0 && !this.falling && !this.onLakitu) {
       this.flightAngle = this.posAngle;
-      this.speedUpwards = 28;
-      this.height = 4;
+      this.speedUpwards = 22;
+      this.height = 3.5;
+      this.isJumping = true;
+      if (this._lastInput) {
+        if (this._lastInput.left) this.driftDirection = -1;
+        else if (this._lastInput.right) this.driftDirection = 1;
+      }
       if (this.isRealPlayer) Sound.play('sfx_jump');
     }
   }
@@ -228,18 +238,70 @@ class Driver {
     if (amount !== 0 && this.isRealPlayer) Sound.play('sfx_coin');
   }
 
-  /* ---------- 玩家操控 (Física de giro suave, progresiva y ultra-jugable) ---------- */
+  /* ---------- 玩家操控 (Física de giro suave, progresiva y derrape auténtico SNES) ---------- */
   playerControls(accel, input, now, dt = 0.016) {
     const v = this.vehicle;
-    if (this.height === 0) {
+    this._lastInput = input;
+
+    if (!this.has(DS.UNCONTROLLED)) {
       if (input.accel) accel = simulateSpeedGraph(this, accel);
       if (input.brake) accel += BRAKE_ACC;
     }
 
-    // Sensibilidad progresiva según la velocidad de avance
     const speedRatio = Math.max(0.20, Math.min(1.0, this.speedForward / (v.maxNormalLinearSpeed * 0.42)));
+
+    // ----------------------------------------------------
+    // 1. MODO DERRAPE BLOQUEADO (POWERSLIDE LOCK)
+    // ----------------------------------------------------
+    if (this.isDrifting) {
+      // Si el jugador suelta el botón de derrape o frena/se detiene, sale del derrape
+      if (!input.drift || this.speedForward < v.maxNormalLinearSpeed * 0.12 || this.has(DS.UNCONTROLLED) || this.has(DS.STOPPED)) {
+        this.isDrifting = false;
+        this.driftDirection = 0;
+        this.driftTime = 0;
+        this.driftSkidTimer = 0;
+      } else {
+        this.driftTime = (this.driftTime || 0) + dt;
+        this.driftSkidTimer = (this.driftSkidTimer || 0) + dt;
+        if (this.driftSkidTimer > 0.28 && this.isRealPlayer) {
+          Sound.play('sfx_skid', { volume: 0.50 });
+          this.driftSkidTimer = 0;
+        }
+
+        const dDir = this.driftDirection; // -1 = izquierda, +1 = derecha
+
+        // Control dinámico del derrape:
+        // - Si gira en la misma dirección del derrape: cierra el arco (aprieta la curva al ápice)
+        // - Si contravolantea: abre el arco derrapando de lado
+        // - Si va neutro: mantiene la trazada de derrape constante
+        let turnPower = 0.88;
+        if ((dDir === -1 && input.left) || (dDir === 1 && input.right)) {
+          turnPower = 1.35; // Giro cerrado al ápice
+        } else if ((dDir === -1 && input.right) || (dDir === 1 && input.left)) {
+          turnPower = 0.42; // Contravolanteo
+        }
+
+        const maxTurn = v.maxTurningAngularSpeed * 1.25 * speedRatio;
+        const targetTurn = dDir * maxTurn * turnPower;
+        this.speedTurn += (targetTurn - this.speedTurn) * (1 - Math.exp(-12.0 * dt));
+
+        // Deslizamiento lateral continuo y espectacular
+        const targetSlip = dDir * 0.35;
+        this.lateralSlip += (targetSlip - this.lateralSlip) * 0.22;
+
+        // Postura visual en derrape (Frame 4)
+        if (dDir === -1) this.animator.goLeft(true);
+        else this.animator.goRight(true);
+        this.animator.drifting = true;
+
+        return accel;
+      }
+    }
+
+    // ----------------------------------------------------
+    // 2. CONDUCCIÓN NORMAL (GIRO PROGRESIVO Y ENTRADA EN DERRAPE)
+    // ----------------------------------------------------
     const wantsDrift = !!((input.drift || this.pressedToDrift) && (this.speedForward > v.maxNormalLinearSpeed * 0.20));
-    let drift = false;
 
     if (input.left && !input.right) {
       this.steerProgress = Math.min(1.0, this.steerProgress + dt * 3.4);
@@ -250,24 +312,24 @@ class Driver {
         this.pressedToDrift = false;
       }
 
-      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.50) {
-        drift = true;
+      if (wantsDrift && Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.40) {
+        this.isDrifting = true;
+        this.driftDirection = -1;
+        if (this.isRealPlayer) Sound.play('sfx_skid', { volume: 0.65 });
       }
 
-      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.25) : (v.maxTurningAngularSpeed * 0.98)) * speedRatio;
+      const maxTurn = v.maxTurningAngularSpeed * 0.98 * speedRatio;
       const targetTurn = -maxTurn * ramp;
-
-      // Giro suave y progresivo con aproximación exponencial
       this.speedTurn += (targetTurn - this.speedTurn) * (1 - Math.exp(-9.5 * dt));
 
-      const targetSlip = drift ? -0.26 : (-0.06 * Math.abs(this.speedTurn / maxTurn));
+      const targetSlip = -0.06 * Math.abs(this.speedTurn / maxTurn);
       this.lateralSlip += (targetSlip - this.lateralSlip) * 0.16;
 
-      if (this.speedForward > v.maxNormalLinearSpeed * 0.96 && !drift) {
+      if (this.speedForward > v.maxNormalLinearSpeed * 0.96) {
         accel -= v.motorAcceleration * 0.15 * Math.abs(this.speedTurn / maxTurn);
       }
 
-      this.animator.goLeft(drift);
+      this.animator.goLeft(this.isDrifting);
     } else if (input.right && !input.left) {
       this.steerProgress = Math.min(1.0, this.steerProgress + dt * 3.4);
       const ramp = Math.pow(this.steerProgress, 1.25);
@@ -277,24 +339,24 @@ class Driver {
         this.pressedToDrift = false;
       }
 
-      if (wantsDrift || Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.50) {
-        drift = true;
+      if (wantsDrift && Math.abs(this.speedTurn) > v.maxTurningAngularSpeed * 0.40) {
+        this.isDrifting = true;
+        this.driftDirection = 1;
+        if (this.isRealPlayer) Sound.play('sfx_skid', { volume: 0.65 });
       }
 
-      const maxTurn = (drift ? (v.maxTurningAngularSpeed * 1.25) : (v.maxTurningAngularSpeed * 0.98)) * speedRatio;
+      const maxTurn = v.maxTurningAngularSpeed * 0.98 * speedRatio;
       const targetTurn = maxTurn * ramp;
-
-      // Giro suave y progresivo con aproximación exponencial
       this.speedTurn += (targetTurn - this.speedTurn) * (1 - Math.exp(-9.5 * dt));
 
-      const targetSlip = drift ? 0.26 : (0.06 * Math.abs(this.speedTurn / maxTurn));
+      const targetSlip = 0.06 * Math.abs(this.speedTurn / maxTurn);
       this.lateralSlip += (targetSlip - this.lateralSlip) * 0.16;
 
-      if (this.speedForward > v.maxNormalLinearSpeed * 0.96 && !drift) {
+      if (this.speedForward > v.maxNormalLinearSpeed * 0.96) {
         accel -= v.motorAcceleration * 0.15 * Math.abs(this.speedTurn / maxTurn);
       }
 
-      this.animator.goRight(drift);
+      this.animator.goRight(this.isDrifting);
     } else {
       // Re-centrado suave y natural del volante
       this.steerProgress = Math.max(0, this.steerProgress - dt * 5.5);
@@ -305,7 +367,6 @@ class Driver {
       if (Math.abs(this.lateralSlip) < 0.001) this.lateralSlip = 0;
     }
 
-    this.isDrifting = drift;
     return accel;
   }
 
@@ -665,12 +726,29 @@ class Driver {
       this.height += this.speedUpwards * dt + 0.5 * GRAVITY * dt * dt;
       if (this.height < 0) {
         if (this.isRealPlayer) Sound.play('sfx_landing');
-        if (!this.heightByRamp && (input.left || input.right || input.drift)) this.pressedToDrift = true;
+        this.height = 0;
+        this.speedUpwards = 0;
+        this.isJumping = false;
+
+        // Aterrizaje: comprobar entrada en derrape (Drift Lock)
+        if (!this.heightByRamp && !this.falling && this.speedForward > this.vehicle.maxNormalLinearSpeed * 0.18) {
+          if (input.drift && (input.left || input.right || this.driftDirection !== 0)) {
+            this.isDrifting = true;
+            if (input.left) this.driftDirection = -1;
+            else if (input.right) this.driftDirection = 1;
+            else if (this.driftDirection === 0) this.driftDirection = (this.speedTurn < 0 ? -1 : 1);
+            if (this.isRealPlayer) Sound.play('sfx_skid', { volume: 0.65 });
+          }
+        }
         this.heightByRamp = false;
+        this.pressedToDrift = false;
       }
       this.height = Math.max(0, this.height);
       this.speedUpwards += GRAVITY * dt;
-      if (this.height === 0) this.speedUpwards = 0;
+      if (this.height === 0) {
+        this.speedUpwards = 0;
+        this.isJumping = false;
+      }
     }
 
     // 最高速度
@@ -687,7 +765,7 @@ class Driver {
     deltaSpace = Math.max(deltaSpace, 0);
     this.speedForward = Math.max(0, Math.min(this.speedForward + accel * dt, maxLin));
 
-    const moveAngle = this.height === 0 ? this.posAngle : this.flightAngle;
+    const moveAngle = this.height === 0 ? this.posAngle : (this.heightByRamp ? this.flightAngle : (this.posAngle * 0.40 + this.flightAngle * 0.60));
     let dpx = Math.cos(moveAngle) * deltaSpace;
     let dpy = Math.sin(moveAngle) * deltaSpace;
 
@@ -764,7 +842,7 @@ class Driver {
 
     this.position.x += dpx;
     this.position.y += dpy;
-    if (this.height === 0) this.posAngle = this.posAngle % TAU + deltaAngle;
+    if (this.height === 0 || (!this.heightByRamp && !this.falling)) this.posAngle = this.posAngle % TAU + deltaAngle;
 
     this.updateGradientPosition(race);
     this.animator.update(dt, this.speedForward, this.height);
@@ -925,6 +1003,8 @@ class Driver {
       this._starSound = null;
       if (Sound.musicGain && Sound.musicGain.gain) Sound.musicGain.gain.value = 0.55;
     }
+    this.isDrifting = false; this.driftDirection = 0; this.driftTime = 0; this.driftSkidTimer = 0;
+    this.isJumping = false; this.lateralSlip = 0;
     this.animator.reset();
   }
 }

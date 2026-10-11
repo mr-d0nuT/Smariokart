@@ -132,6 +132,16 @@ const Input = {
   },
   down(k) { return !!this.held[k]; },
   pressed(k) { return this.pressedSet.has(k); },
+  setVirtualButton(action, isDown) {
+    if (isDown) {
+      if (!this.held[action]) this.pressedSet.add(action);
+      this.held[action] = true;
+      if (action === 'accept') this.rawPressedSet.add('enter');
+      if (action === 'back') this.rawPressedSet.add('escape');
+    } else {
+      this.held[action] = false;
+    }
+  },
   endFrame() { this.pressedSet.clear(); this.rawPressedSet.clear(); }
 };
 

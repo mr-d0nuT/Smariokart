@@ -88,9 +88,16 @@ const Game = {
     this.scaleCanvas();
     const btn = document.getElementById('btnToggleAspect');
     if (btn) {
-      if (this.aspectMode === 'fit_crt') btn.textContent = '📺 4:3 (CRT)';
-      else if (this.aspectMode === 'fill') btn.textContent = '↔️ 16:9 / TOTAL';
-      else btn.textContent = '🕹️ 8:7 (NATIVO)';
+      if (this.aspectMode === 'fit_crt') {
+        btn.textContent = '📺';
+        btn.title = 'Formato de Pantalla: 4:3 (CRT SNES)';
+      } else if (this.aspectMode === 'fill') {
+        btn.textContent = '↔️';
+        btn.title = 'Formato de Pantalla: 16:9 (Panorámica Total)';
+      } else {
+        btn.textContent = '🕹️';
+        btn.title = 'Formato de Pantalla: 8:7 (Píxel Nativo SNES)';
+      }
     }
   },
 
@@ -98,6 +105,11 @@ const Game = {
     const doc = document;
     const isFull = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
     this.isFullscreen = isFull;
+    const btnIcon = document.getElementById('btnFullscreenToggle');
+    if (btnIcon) {
+      btnIcon.textContent = isFull ? '🗗' : '⛶';
+      btnIcon.title = isFull ? 'Salir de Pantalla Completa (F)' : 'Pantalla Completa (F)';
+    }
     const btn = document.getElementById('btnToggleFullscreen');
     if (btn) {
       btn.textContent = isFull ? '🗗 SALIR PANTALLA COMPLETA' : '⛶ PANTALLA COMPLETA';
