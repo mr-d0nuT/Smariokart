@@ -140,6 +140,7 @@ class RedShell extends BaseItem {
         if (d.finished) continue;
         if (d.charIdx === this.ownerChar && (this.life > 9.5 || this.inactiveFrames > 0)) continue;
         if (d.balloons !== undefined && d.balloons <= 0) continue;
+        if (d.has(DS.UNCONTROLLED)) continue;
         const dx = d.position.x - this.position.x;
         const dy = d.position.y - this.position.y;
         const dot = dx * Math.cos(curAng) + dy * Math.sin(curAng);
@@ -153,6 +154,7 @@ class RedShell extends BaseItem {
       }
     }
 
+    const oldX = this.position.x, oldY = this.position.y;
     if (!this.target || this.target.finished || (this.target.balloons !== undefined && this.target.balloons <= 0)) {
       // Sin objetivo delante: vuela hacia adelante guiado suavemente por el trazado de la pista
       const nd = AI.getNextDirection(this.position.x, this.position.y);
@@ -168,7 +170,7 @@ class RedShell extends BaseItem {
       this.position.x += this.vel.x * dt;
       this.position.y += this.vel.y * dt;
     } else {
-      // Persecución activa y precisa del rival más próximo delante
+      // Persecución activa y precisa del rival más próximo delante con seguimiento inteligente de pista
       const dx = this.target.position.x - this.position.x;
       const dy = this.target.position.y - this.position.y;
       const dist = Math.hypot(dx, dy);
@@ -180,13 +182,12 @@ class RedShell extends BaseItem {
       } else {
         const targetAng = Math.atan2(dy, dx);
         let desiredAng = targetAng;
-        if (dist > 0.18) {
-          const nd = AI.getNextDirection(this.position.x, this.position.y);
-          if (nd && isFinite(nd.x) && isFinite(nd.y)) {
-            const trackAng = Math.atan2(nd.y, nd.x);
-            const angDiff = normAngle(targetAng - trackAng);
-            desiredAng = trackAng + angDiff * 0.45;
-          }
+        const nd = AI.getNextDirection(this.position.x, this.position.y);
+        if (nd && isFinite(nd.x) && isFinite(nd.y) && (nd.x !== 0 || nd.y !== 0)) {
+          const trackAng = Math.atan2(nd.y, nd.x);
+          const blend = dist > 0.08 ? 0.70 : dist > 0.03 ? 0.35 : 0.10;
+          const angDiff = normAngle(targetAng - trackAng);
+          desiredAng = trackAng + angDiff * (1 - blend);
         }
         const curAng = Math.atan2(this.vel.y, this.vel.x);
         const dAng = normAngle(desiredAng - curAng);
@@ -204,7 +205,16 @@ class RedShell extends BaseItem {
     } else {
       const land = GameMap.getLand(this.position.x, this.position.y);
       if (land === Land.BLOCK) {
-        this.used = true;
+        if (!this.bounces) this.bounces = 0;
+        this.bounces++;
+        if (this.bounces > 2) {
+          this.used = true;
+        } else {
+          this.vel.x *= -0.7;
+          this.vel.y *= -0.7;
+          this.position.x = oldX;
+          this.position.y = oldY;
+        }
       }
     }
   }
@@ -337,7 +347,18 @@ function itemCollisions(race) {
       // reach en unidades de baldosas (kart ~0.8 + item ~0.8 ≈ 1.8 baldosas)
       const reach = Math.max(1.8, (item.hitboxRadius || 1.2) + 0.6);
       if (dx * dx + dy * dy > reach * reach) continue;
-      if (d.isImmune()) { item.used = true; race.addSparkles(item.position); break; }
+
+      // IMPACTO CONFIRMADO: El proyectil desaparece e invalida sus coordenadas DE INMEDIATO
+      item.used = true;
+      item.position.x = -9999;
+      item.position.y = -9999;
+      if (item.vel) { item.vel.x = 0; item.vel.y = 0; }
+      race.addSparkles(d.position);
+
+      if (d.isImmune()) {
+        break;
+      }
+
       d.applyHit();
       Sound.play('sfx_hit');
       // 气球对战：道具命中计攻击者得分（击破一个气球）
@@ -346,8 +367,6 @@ function itemCollisions(race) {
         if (race.drivers[item.ownerChar]) race.drivers[item.ownerChar].hitsDealt++;
         d.wasBalloonHit = false;
       }
-      item.used = true;
-      race.addSparkles(item.position);
       break;
     }
   }

@@ -222,6 +222,7 @@ const View = {
 
     // 道具
     for (const item of race.items) {
+      if (item.used) continue;
       const pr = project(item.position);
       if (!pr.ok) continue;
       const zscale = Math.min(M7.spriteScale(Math.max(0.008, pr.z)), 3.2);
@@ -575,16 +576,22 @@ class Race {
         b.position.x += nx * overlap * ratioB;
         b.position.y += ny * overlap * ratioB;
 
-        // 碰撞弹性冲量反弹
-        const relSpeed = Math.max(0.04, Math.hypot(a.speedForward, b.speedForward));
-        const impulse = 0.022 + relSpeed * 0.22;
+        // Micro-empujón arcade SMK sutil (separación limpia sin catapultas)
+        const relSpeed = Math.hypot(a.speedForward, b.speedForward);
+        const impulse = Math.min(0.0018, 0.0003 + relSpeed * 0.008);
         a.collisionMomentum.x -= nx * impulse * ratioA;
         a.collisionMomentum.y -= ny * impulse * ratioA;
         b.collisionMomentum.x += nx * impulse * ratioB;
         b.collisionMomentum.y += ny * impulse * ratioB;
 
-        a.speedForward *= 0.88;
-        b.speedForward *= 0.88;
+        // Ajuste suave de velocidad relativa: el que embiste se frena ligeramente, el embestido recibe suave aceleración
+        if (a.speedForward > b.speedForward) {
+          a.speedForward *= 0.95;
+          b.speedForward = Math.min(b.vehicle.maxNormalLinearSpeed, b.speedForward + 0.004);
+        } else {
+          b.speedForward *= 0.95;
+          a.speedForward = Math.min(a.vehicle.maxNormalLinearSpeed, a.speedForward + 0.004);
+        }
 
         if (a.isRealPlayer || b.isRealPlayer) {
           const nowCol = GameClock.now();
@@ -632,9 +639,9 @@ class Race {
           d.position.x += nx * (overlap / 128);
           d.position.y += ny * (overlap / 128);
           // Impulso elástico de rebote sólido contra pared
-          d.collisionMomentum.x += nx * 0.09;
-          d.collisionMomentum.y += ny * 0.09;
-          d.speedForward = Math.min(d.speedForward * 0.2, 0.02);
+          d.collisionMomentum.x += nx * 0.004;
+          d.collisionMomentum.y += ny * 0.004;
+          d.speedForward = Math.min(d.speedForward * 0.2, 0.01);
           d.popState(DS.SPEED_UP);
           d.popState(DS.MORE_SPEED_UP);
 
