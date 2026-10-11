@@ -77,7 +77,7 @@ function simulateSpeedGraph(d, accel) {
 }
 
 class Driver {
-  constructor(charIdx, controlType, ccIndex, isRealPlayer) {
+  constructor(charIdx, controlType, ccIndex = 0, isRealPlayer = false) {
     this.charIdx = charIdx;
     this.char = CHARACTERS[charIdx];
     this.controlType = controlType;   // 'player' | 'ai'
@@ -166,7 +166,8 @@ class Driver {
   shortJump() {
     if (this.height === 0) {
       this.flightAngle = this.posAngle;
-      this.height = 3;
+      this.speedUpwards = 28;
+      this.height = 4;
       if (this.isRealPlayer) Sound.play('sfx_jump');
     }
   }
@@ -866,21 +867,19 @@ class Driver {
 
   /* 车手间碰撞解算（移植 solveCollision） */
   solveCollision(other) {
-    if (Math.abs(this.height - other.height) > 5) return null;
+    if (Math.abs(this.height - other.height) > 6) return null;
     if (this.isImmune() && !other.isImmune())
       return { momentum: { x: 0, y: 0 }, speedFactor: 1.0, hit: false, hitOther: true };
     if (!this.isImmune() && other.isImmune()) return null;
-    const mySpeed = Math.max(this.speedForward, 1e-6);
-    const othSpeed = Math.max(Math.hypot(other.speedForward * Math.cos(other.posAngle),
-                                        other.speedForward * Math.sin(other.posAngle)), 1e-6);
-    const speedFactor = mySpeed / (mySpeed + othSpeed);
+    const mySpeed = Math.max(this.speedForward, 1e-4);
+    const othSpeed = Math.max(other.speedForward, 1e-4);
     const weightFactor = Math.sqrt(this.vehicle.weight / (this.vehicle.weight + other.vehicle.weight));
     const dx = other.position.x - this.position.x, dy = other.position.y - this.position.y;
-    const dist = Math.max(Math.hypot(dx, dy), 1e-6);
+    const dist = Math.max(Math.hypot(dx, dy), 1e-4);
+    const impulse = (0.02 + (mySpeed + othSpeed) * 0.15) * (1 / weightFactor);
     return {
-      momentum: { x: dx / dist * mySpeed * speedFactor * weightFactor * 0.1,
-                  y: dy / dist * mySpeed * speedFactor * weightFactor * 0.1 },
-      speedFactor: weightFactor * 0.95,
+      momentum: { x: -dx / dist * impulse, y: -dy / dist * impulse },
+      speedFactor: 0.88,
       hit: false
     };
   }

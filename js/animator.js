@@ -121,11 +121,22 @@ class Animator {
     if (this.smallTime > 0) { w *= 0.5; h *= 0.5; }
     if (this.smashTime > 0) h *= 0.5;
     if (this.state === 'fall') { w *= this.fallScale; h *= this.fallScale; }
+    const hopY = (opts.height || 0) * 2.5;
     const bob = (opts.height || 0) > 0 ? 0 :
       Math.sin(this.bobTime * Math.PI * 2) * 0.4 * baseScale;
 
     ctx.save();
-    ctx.translate(x, y + bob);
+    if (hopY > 0) {
+      // Sombra proyectada en el suelo durante el salto (física visual auténtica)
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = 'rgba(0,0,0,0.38)';
+      ctx.beginPath();
+      ctx.ellipse(0, -2, Math.max(8, w * 0.32), Math.max(3, h * 0.10), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.translate(x, y + bob - hopY);
     if (f.mirror) ctx.scale(-1, 1);
 
     const prevSmooth = ctx.imageSmoothingEnabled;

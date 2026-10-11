@@ -110,11 +110,11 @@ class GreenShell extends BaseItem {
 
 class RedShell extends BaseItem {
   constructor(pos, target, angle, forwardThrow, playerHeight) {
-    super(pos, 0.05, 4, playerHeight);
+    super(pos, 0.05, 1.2, playerHeight);
     const a = forwardThrow ? angle : angle + Math.PI;
     const fx = Math.cos(a) * SHELL_FWD, fy = Math.sin(a) * SHELL_FWD;
     this.position.x += fx; this.position.y += fy;
-    const shellSpeed = 0.44;
+    const shellSpeed = 0.52;
     this.vel = { x: Math.cos(a) * shellSpeed, y: Math.sin(a) * shellSpeed };
     this.target = forwardThrow ? target : null;
     this.inactiveFrames = 8;
@@ -125,32 +125,44 @@ class RedShell extends BaseItem {
     this.life -= dt;
     if (this.life <= 0) { this.used = true; return; }
 
-    if (!this.target || this.target.finished) {
+    const shellSpeed = 0.52;
+    if (!this.target || this.target.finished || (this.target.balloons !== undefined && this.target.balloons <= 0)) {
+      // Sin objetivo delante: vuela hacia adelante guiado por el trazado de la pista
+      const nd = AI.getNextDirection(this.position.x, this.position.y);
+      if (nd && isFinite(nd.x) && isFinite(nd.y)) {
+        const nm = Math.hypot(nd.x, nd.y) || 1;
+        this.vel.x = (nd.x / nm) * shellSpeed;
+        this.vel.y = (nd.y / nm) * shellSpeed;
+      }
       this.position.x += this.vel.x * dt;
       this.position.y += this.vel.y * dt;
     } else {
-      // Persecución activa del objetivo según vmbatlle RedShell::update
+      // Persecución activa y precisa del rival más próximo delante
       const dx = this.target.position.x - this.position.x;
       const dy = this.target.position.y - this.position.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < 0.12) {
-        // En rango de impacto: aceleración directa al chasis del rival
-        const step = Math.min(1.0, 20.0 * dt);
-        this.position.x += dx * step;
-        this.position.y += dy * step;
+      if (dist < 0.012) {
+        // En rango directo de impacto
+        this.position.x = this.target.position.x;
+        this.position.y = this.target.position.y;
       } else {
-        // Navegación por la pista + atracción hacia el rival a 1.4x de velocidad
-        const shellSpeed = 0.44;
-        let dirX = dx / dist, dirY = dy / dist;
-        const nd = AI.getNextDirection(this.position.x, this.position.y);
-        if (nd && isFinite(nd.x) && isFinite(nd.y)) {
-          const nm = Math.hypot(nd.x, nd.y) || 1;
-          dirX = (nd.x / nm) * 0.65 + (dx / dist) * 0.35;
-          dirY = (nd.y / nm) * 0.65 + (dy / dist) * 0.35;
+        const targetAng = Math.atan2(dy, dx);
+        let desiredAng = targetAng;
+        if (dist > 0.18) {
+          const nd = AI.getNextDirection(this.position.x, this.position.y);
+          if (nd && isFinite(nd.x) && isFinite(nd.y)) {
+            const trackAng = Math.atan2(nd.y, nd.x);
+            const angDiff = normAngle(targetAng - trackAng);
+            desiredAng = trackAng + angDiff * 0.45;
+          }
         }
-        const m = Math.hypot(dirX, dirY) || 1;
-        this.vel = { x: (dirX / m) * shellSpeed, y: (dirY / m) * shellSpeed };
+        const curAng = Math.atan2(this.vel.y, this.vel.x);
+        const dAng = normAngle(desiredAng - curAng);
+        const maxTurn = 14.0 * dt;
+        const newAng = curAng + Math.max(-maxTurn, Math.min(maxTurn, dAng));
+        this.vel.x = Math.cos(newAng) * shellSpeed;
+        this.vel.y = Math.sin(newAng) * shellSpeed;
         this.position.x += this.vel.x * dt;
         this.position.y += this.vel.y * dt;
       }
@@ -198,15 +210,25 @@ function useItem(user, race, isFront) {
             if (dd < best) { best = dd; target = d; }
           }
         } else {
-          // Primero el piloto que va por delante en la carrera
-          target = race.driverAheadOf(user);
-          if (!target || target.finished) {
-            // Si el usuario va en 1ª posición o el de delante ya acabó, buscar al rival más cercano
-            let bestDist = Infinity;
-            for (const d of race.drivers) {
-              if (d === user || d.finished) continue;
-              const dd = (d.position.x - user.position.x) ** 2 + (d.position.y - user.position.y) ** 2;
-              if (dd < bestDist) { bestDist = dd; target = d; }
+          // Buscar el rival más próximo que esté DELANTE del usuario
+          const userVal = (user.lastGradient >= 0) ? user.lastGradient : AI.posValue(user.position.x, user.position.y);
+          const userProg = user.laps * 1024 + (1024 - userVal);
+          const fwdX = Math.cos(user.posAngle), fwdY = Math.sin(user.posAngle);
+
+          let bestDist = Infinity;
+          for (const d of race.drivers) {
+            if (d === user || d.finished) continue;
+            const dx = d.position.x - user.position.x;
+            const dy = d.position.y - user.position.y;
+            const dVal = (d.lastGradient >= 0) ? d.lastGradient : AI.posValue(d.position.x, d.position.y);
+            const dProg = d.laps * 1024 + (1024 - dVal);
+            const inFrontOfUser = (dProg > userProg) || (dx * fwdX + dy * fwdY > 0);
+            if (inFrontOfUser) {
+              const distSq = dx * dx + dy * dy;
+              if (distSq < bestDist) {
+                bestDist = distSq;
+                target = d;
+              }
             }
           }
         }
@@ -281,8 +303,8 @@ function itemCollisions(race) {
       if (Math.abs(item.height - d.height) > 5) continue;
       const dx = (item.position.x - d.position.x) * 128;
       const dy = (item.position.y - d.position.y) * 128;
-      // hitboxRadius是1024像素空间值，换算成格(/8)；含车手半径1.5px+余量0.1px
-      const reach = (item.hitboxRadius + 1.5 + 0.1) / 8;
+      // reach en unidades de baldosas (kart ~0.65 + item ~0.55 ≈ 1.2 baldosas)
+      const reach = Math.max(1.2, (item.hitboxRadius || 1.0) + 0.3);
       if (dx * dx + dy * dy > reach * reach) continue;
       if (d.isImmune()) { item.used = true; race.addSparkles(item.position); break; }
       d.applyHit();

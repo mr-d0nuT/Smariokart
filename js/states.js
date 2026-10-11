@@ -122,6 +122,7 @@ const Input = {
       case 'w': case 'x': case 'arrowup': return ['accel', 'up'];
       case 's': case 'z': case 'arrowdown': return ['brake', 'down'];
       case 'c': case 'shift': case ' ': return ['drift'];
+      case 'r': return ['r', 'restart'];
       case 'e': return ['itemfront'];
       case 'q': return ['itemback'];
       case 'enter': return ['accept'];
@@ -507,39 +508,71 @@ class Race {
       interactFloorObjects(d, this);
     }
 
-    // 车手间碰撞
-    // Bug9修复⓪（根因）：C++中两车hitbox半径和=(1.5+1.5)/1024地图单位=0.375格，
-    // 此前误写成3格——发车格车间距恰为3格，全场每帧互相"碰撞"，
-    // solveCollision把速度连乘到0，导致起步集体趴窝/窄路抱团永久堵死。
-    const HITBOX_TILES = (1.5 / 1024) * 2 * 128;   // =0.375格
+    // 车手间碰撞与物理推挤（彻底杜绝穿模，真实弹开与体积互斥）
+    const HITBOX_TILES = 1.35;   // 1.35格 ≈ 11像素 (两车接触距离，发车格间距为5格不会误碰)
+    const HITBOX_SQ = HITBOX_TILES * HITBOX_TILES;
     for (let i = 0; i < this.drivers.length; i++) {
-      for (let j = 0; j < this.drivers.length; j++) {
-        if (i === j) continue;
+      for (let j = i + 1; j < this.drivers.length; j++) {
         const a = this.drivers[i], b = this.drivers[j];
+        if (a.falling || b.falling) continue;
+        if (Math.abs(a.height - b.height) > 6) continue;
         const dx = (b.position.x - a.position.x) * 128;
         const dy = (b.position.y - a.position.y) * 128;
-        if (dx * dx + dy * dy > HITBOX_TILES * HITBOX_TILES) continue;
-        const data = a.solveCollision(b);
-        if (data) {
-          a.collisionMomentum.x += data.momentum.x;
-          a.collisionMomentum.y += data.momentum.y;
-          a.speedForward *= data.speedFactor;
-          a.speedTurn *= data.speedFactor;
-          if (data.hitOther) {
-            b.applyHit();
-            const bdx = b.position.x - a.position.x, bdy = b.position.y - a.position.y;
-            const bdist = Math.max(Math.hypot(bdx, bdy), 1e-6);
-            b.collisionMomentum.x += (bdx / bdist) * 0.06;
-            b.collisionMomentum.y += (bdy / bdist) * 0.06;
-            b.speedForward *= 0.25;
-            this.addSparkles(b.position);
-            if (a.isRealPlayer || b.isRealPlayer) {
-              Sound.play('sfx_hit');
-            }
-          } else if (data.hit) {
-            a.applyHit();
-          } else if (!a.isImmune()) {
-            a.addCoin(-1);
+        const distSq = dx * dx + dy * dy;
+        if (distSq > HITBOX_SQ) continue;
+        const dist = Math.max(Math.sqrt(distSq), 1e-4);
+        const nx = dx / dist; // a 指向 b 的单位法向量
+        const ny = dy / dist;
+
+        // 星星无敌碰撞判定
+        if (a.isImmune() && !b.isImmune()) {
+          b.applyHit();
+          b.collisionMomentum.x += nx * 0.08;
+          b.collisionMomentum.y += ny * 0.08;
+          b.speedForward *= 0.3;
+          this.addSparkles(b.position);
+          if (a.isRealPlayer || b.isRealPlayer) Sound.play('sfx_hit');
+          continue;
+        }
+        if (b.isImmune() && !a.isImmune()) {
+          a.applyHit();
+          a.collisionMomentum.x -= nx * 0.08;
+          a.collisionMomentum.y -= ny * 0.08;
+          a.speedForward *= 0.3;
+          this.addSparkles(a.position);
+          if (a.isRealPlayer || b.isRealPlayer) Sound.play('sfx_hit');
+          continue;
+        }
+
+        // 真实弹性碰撞与体积物理分离（直接修正重叠坐标，彻底防止相交穿模）
+        const overlap = (HITBOX_TILES - dist) / 128;
+        const wA = (a.vehicle && a.vehicle.weight) ? a.vehicle.weight : 1;
+        const wB = (b.vehicle && b.vehicle.weight) ? b.vehicle.weight : 1;
+        const totalW = wA + wB;
+        const ratioA = wB / totalW;
+        const ratioB = wA / totalW;
+
+        a.position.x -= nx * overlap * ratioA;
+        a.position.y -= ny * overlap * ratioA;
+        b.position.x += nx * overlap * ratioB;
+        b.position.y += ny * overlap * ratioB;
+
+        // 碰撞弹性冲量反弹
+        const relSpeed = Math.max(0.04, Math.hypot(a.speedForward, b.speedForward));
+        const impulse = 0.022 + relSpeed * 0.22;
+        a.collisionMomentum.x -= nx * impulse * ratioA;
+        a.collisionMomentum.y -= ny * impulse * ratioA;
+        b.collisionMomentum.x += nx * impulse * ratioB;
+        b.collisionMomentum.y += ny * impulse * ratioB;
+
+        a.speedForward *= 0.88;
+        b.speedForward *= 0.88;
+
+        if (a.isRealPlayer || b.isRealPlayer) {
+          const nowCol = GameClock.now();
+          if (!this._lastBumpSound || nowCol - this._lastBumpSound > 0.22) {
+            Sound.play('sfx_thudpipe');
+            this._lastBumpSound = nowCol;
           }
         }
       }
@@ -1353,6 +1386,12 @@ class RaceState {
     this.race.draw(ctx, this.race.player);
   }
   key(k) {
+    if (k === 'r' || k === 'restart') {
+      Sound.stopEngine();
+      Sound.stopMusic();
+      Game.transitionTo(new RaceLoadingState(this.race.trackId, this.race.isBattle));
+      return;
+    }
     if (k === 'back') Game.setState(new PauseState(this.race));
   }
 }
@@ -1369,7 +1408,12 @@ class PauseState {
     Text.ui(ctx, 'enter: quit race', 256, 268, 14, '#cccccc', 'center');
   }
   key(k) {
-    if (k === 'r') { Sound.stopMusic(); Game.transitionTo(new RaceLoadingState(this.race.trackId, this.race.isBattle)); return; }
+    if (k === 'r' || k === 'restart') {
+      Sound.stopEngine();
+      Sound.stopMusic();
+      Game.transitionTo(new RaceLoadingState(this.race.trackId, this.race.isBattle));
+      return;
+    }
     if (k === 'back') Game.setState(new RaceState(this.race));
     if (k === 'accept') {
       Sound.stopEngine();
@@ -1533,6 +1577,12 @@ class BattleState {
   }
   draw(ctx) { this.race.draw(ctx, this.race.player); }
   key(k) {
+    if (k === 'r' || k === 'restart') {
+      Sound.stopEngine();
+      Sound.stopMusic();
+      Game.transitionTo(new RaceLoadingState(this.race.trackId, this.race.isBattle));
+      return;
+    }
     if (k === 'back') Game.setState(new PauseState(this.race));
   }
 }
