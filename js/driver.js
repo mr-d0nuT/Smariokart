@@ -192,8 +192,9 @@ class Driver {
       this.addCoin(-2);
       this.popState(DS.SPEED_UP); this.popState(DS.MORE_SPEED_UP);
       this.speedTurn = 0;
-      this.speedForward = Math.min(this.speedForward, this.vehicle.maxNormalLinearSpeed * 0.6);
-      if (this.isRealPlayer) Sound.play('sfx_hit');
+      this.speedForward = Math.min(this.speedForward, this.vehicle.maxNormalLinearSpeed * 0.25);
+      Sound.play('sfx_hit');
+      this.animator.hit();
       this.pushState(DS.UNCONTROLLED, GameClock.now() + DUR.UNCONTROLLED);
     }
   }
@@ -604,6 +605,8 @@ class Driver {
 
     if (this.has(DS.UNCONTROLLED)) {
       this.animator.hit();
+      this.speedForward *= Math.exp(-6.0 * dt);
+      this.speedTurn = 0;
     } else if (!this.has(DS.STOPPED)) {
       if (this.controlType === 'player') accel = this.playerControls(accel, input, now);
       else {

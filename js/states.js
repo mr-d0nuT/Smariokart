@@ -193,17 +193,8 @@ const View = {
     const list = [];
     const skyH = M7.SKY_HEIGHT || 44;
     const circuitH = this.circuitCanvas ? this.circuitCanvas.height : 276;
-    const camPos = {
-      x: camDriver.position.x - Math.cos(camDriver.posAngle) * (M7.CAM_2_PLAYER_DST / 1024),
-      y: camDriver.position.y - Math.sin(camDriver.posAngle) * (M7.CAM_2_PLAYER_DST / 1024)
-    };
-
-    const project = (pos, visualRadius) => {
-      const p = {
-        x: pos.x - Math.cos(camDriver.posAngle) * (visualRadius / 1024),
-        y: pos.y - Math.sin(camDriver.posAngle) * (visualRadius / 1024)
-      };
-      return M7.mapToScreen(camPos, camDriver.posAngle, p);
+    const project = (pos) => {
+      return M7.mapToScreen(camDriver.position, camDriver.posAngle, pos);
     };
     const place = (scr, w, h, heightUnits, zscale) => {
       return {
@@ -215,9 +206,9 @@ const View = {
 
     // 墙物体（管道/thwomp）
     for (const wo of GameMap.wallObjects) {
-      const pr = project(wo, 2.5 / 1024);
-      if (!pr.ok || pr.z < 0.012) continue;   // 贴脸管道跳过（Bug反馈：近距缩放爆炸乱跳）
-      const zscale = Math.min(M7.spriteScale(pr.z), 2.4);
+      const pr = project(wo);
+      if (!pr.ok) continue;
+      const zscale = Math.min(M7.spriteScale(Math.max(0.008, pr.z)), 3.2);
       const sw = 24 * M7.CIRCUIT_HEIGHT_PCT * zscale;
       const sh = 32 * M7.CIRCUIT_HEIGHT_PCT * zscale;
       const rect = place(pr, sw, sh, wo.height, zscale);
@@ -231,9 +222,9 @@ const View = {
 
     // 道具
     for (const item of race.items) {
-      const pr = project(item.position, 0.05 / 1024);
+      const pr = project(item.position);
       if (!pr.ok) continue;
-      const zscale = M7.spriteScale(pr.z);
+      const zscale = Math.min(M7.spriteScale(Math.max(0.008, pr.z)), 3.2);
       const sw = 16 * M7.CIRCUIT_HEIGHT_PCT * zscale;
       const rect = place(pr, sw, sw, item.height, zscale);
       const img = item.sprite();
@@ -242,9 +233,9 @@ const View = {
 
     // 特效
     for (const fx of race.effects) {
-      const pr = project(fx.pos, 0.05 / 1024);
+      const pr = project(fx.pos);
       if (!pr.ok) continue;
-      const zscale = M7.spriteScale(pr.z);
+      const zscale = Math.min(M7.spriteScale(Math.max(0.008, pr.z)), 3.2);
       const sw = 24 * M7.CIRCUIT_HEIGHT_PCT * zscale;
       const rect = place(pr, sw, sw * 0.66, 0, zscale);
       const frame = fx.frames[Math.min(fx.frames.length - 1, (fx.t * 15 | 0) % fx.frames.length)];
@@ -254,9 +245,9 @@ const View = {
     // 对手车手
     for (const d of race.drivers) {
       if (d === camDriver || d.has(DS.INVISIBLE)) continue;
-      const pr = project(d.position, 1.0 / 1024);
+      const pr = project(d.position);
       if (!pr.ok) continue;
-      const zscale = M7.spriteScale(pr.z);
+      const zscale = Math.min(M7.spriteScale(Math.max(0.008, pr.z)), 3.2);
       const sw = 32 * M7.CIRCUIT_HEIGHT_PCT * zscale;
       const relAngle = camDriver.posAngle - d.posAngle;
       const vf = d.animator.viewFrame(relAngle);
@@ -630,23 +621,34 @@ class Race {
           d.vectorialSpeed.y += dy / m * 0.09;
           d.applySmash();
         } else {
-          // 管道：实体碰撞半径0.55格(管道0.2+车0.35)，接触才有事
-          if (d2 > 0.55 * 0.55) continue;
+          // 管道：实体碰撞（半径 2.2 格，约 18 像素）
+          const pipeRadius = 2.2;
+          const dist = Math.hypot(dx, dy);
+          if (dist > pipeRadius) continue;
           if (d.isImmune()) continue;                 // 星星无敌直接冲破管道免撞
+          const nx = dist > 1e-4 ? dx / dist : 1;
+          const ny = dist > 1e-4 ? dy / dist : 0;
+          // Separación física: expulsar el kart fuera de la tubería de forma sólida
+          const overlap = pipeRadius - dist;
+          d.position.x += nx * (overlap / 128);
+          d.position.y += ny * (overlap / 128);
+          // Impulso elástico y frenazo contundente
+          d.collisionMomentum.x += nx * 0.08;
+          d.collisionMomentum.y += ny * 0.08;
+          d.speedForward *= 0.25;
+
           if (!d._pipeCd) d._pipeCd = {};
-          if (nowW < (d._pipeCd[wi] || 0)) continue;  // 每根管道1秒一次结算
-          d._pipeCd[wi] = nowW + 1;
-          const m = Math.hypot(dx, dy) || 1;
-          // 反弹：沿法线弹开并掉速
-          d.collisionMomentum.x += dx / m * 0.05;
-          d.collisionMomentum.y += dy / m * 0.05;
-          d.speedForward *= 0.55;
-          d.addCoin(-1);
+          if (nowW >= (d._pipeCd[wi] || 0)) {
+            d._pipeCd[wi] = nowW + 0.8;
+            Sound.play('sfx_thudpipe');
+            d.applyHit();
+            d.addCoin(-1);
+          }
         }
       }
     }
 
-    for (const item of this.items) item.update(dt);
+    for (const item of this.items) item.update(dt, this);
     itemCollisions(this);
     for (const fx of this.effects) { fx.t += dt; fx.life -= dt; }
     this.effects = this.effects.filter(f => f.life > 0);

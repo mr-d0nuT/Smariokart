@@ -64,15 +64,20 @@ class Banana extends BaseItem {
 
 class GreenShell extends BaseItem {
   constructor(pos, angle, forwardThrow, playerHeight) {
-    super(pos, 0.05, 5, playerHeight);
+    super(pos, 0.05, 1.4, playerHeight);
     const a = forwardThrow ? angle : angle + Math.PI;
     const fx = Math.cos(a) * SHELL_FWD, fy = Math.sin(a) * SHELL_FWD;
     this.position.x += fx; this.position.y += fy;
     this.vel = { x: fx * 80, y: fy * 80 };
     this.verticalSpeed = 0;
     this.lives = 6;
+    this.life = 12.0;
+    this.inactiveFrames = 8;
   }
   update(dt) {
+    this.life -= dt;
+    if (this.life <= 0) { this.used = true; return; }
+    if (this.inactiveFrames > 0) this.inactiveFrames--;
     for (let i = 0; i < 3; i++) this.march(dt / 3);
   }
   march(dt) {
@@ -120,12 +125,34 @@ class RedShell extends BaseItem {
     this.inactiveFrames = 8;
     this.life = 10.0;
   }
-  update(dt) {
+  update(dt, race) {
     if (this.inactiveFrames > 0) this.inactiveFrames--;
     this.life -= dt;
     if (this.life <= 0) { this.used = true; return; }
 
-    const shellSpeed = 0.52;
+    const shellSpeed = 0.58;
+
+    // Si no tiene objetivo o su objetivo actual ya no es válido, buscar dinámicamente el rival más próximo por delante
+    if ((!this.target || this.target.finished || (this.target.balloons !== undefined && this.target.balloons <= 0)) && race) {
+      let bestDist = Infinity;
+      const curAng = Math.atan2(this.vel.y, this.vel.x);
+      for (const d of race.drivers) {
+        if (d.finished) continue;
+        if (d.charIdx === this.ownerChar && (this.life > 9.5 || this.inactiveFrames > 0)) continue;
+        if (d.balloons !== undefined && d.balloons <= 0) continue;
+        const dx = d.position.x - this.position.x;
+        const dy = d.position.y - this.position.y;
+        const dot = dx * Math.cos(curAng) + dy * Math.sin(curAng);
+        if (dot > -0.015) {
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestDist) {
+            bestDist = d2;
+            this.target = d;
+          }
+        }
+      }
+    }
+
     if (!this.target || this.target.finished || (this.target.balloons !== undefined && this.target.balloons <= 0)) {
       // Sin objetivo delante: vuela hacia adelante guiado suavemente por el trazado de la pista
       const nd = AI.getNextDirection(this.position.x, this.position.y);
@@ -146,7 +173,7 @@ class RedShell extends BaseItem {
       const dy = this.target.position.y - this.position.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < 0.012) {
+      if (dist < 0.02) {
         // En rango directo de impacto
         this.position.x = this.target.position.x;
         this.position.y = this.target.position.y;
@@ -163,8 +190,7 @@ class RedShell extends BaseItem {
         }
         const curAng = Math.atan2(this.vel.y, this.vel.x);
         const dAng = normAngle(desiredAng - curAng);
-        // Si el objetivo de repente queda detrás, no girar en redondo hacia atrás
-        const maxTurn = (Math.abs(dAng) < Math.PI * 0.75) ? (14.0 * dt) : (4.0 * dt);
+        const maxTurn = 16.0 * dt;
         const newAng = curAng + Math.max(-maxTurn, Math.min(maxTurn, dAng));
         this.vel.x = Math.cos(newAng) * shellSpeed;
         this.vel.y = Math.sin(newAng) * shellSpeed;
@@ -226,8 +252,10 @@ function useItem(user, race, isFront) {
             const dx = d.position.x - user.position.x;
             const dy = d.position.y - user.position.y;
             const dotFwd = dx * fwdX + dy * fwdY;
-            // Solo rivales que estén geométricamente por delante en el vector visual/marcha
-            if (dotFwd > 0.005) {
+            const dVal = (d.lastGradient >= 0) ? d.lastGradient : AI.posValue(d.position.x, d.position.y);
+            const dProg = d.laps * 1024 + (1024 - dVal);
+            // Rival por delante en la pista o en el cono de visión
+            if (dotFwd > -0.01 || dProg > userProg) {
               const distSq = dx * dx + dy * dy;
               if (distSq < bestDist) {
                 bestDist = distSq;
@@ -302,20 +330,21 @@ function itemCollisions(race) {
     for (const d of race.drivers) {
       if (d.finished) continue;
       if (race.isBattle && d.balloons <= 0) continue;   // 幽灵观战不可再被击中
-      // 自己刚掷出的道具不会立刻打中自己（原版行为）
-      if (item.ownerChar !== undefined && item.ownerChar === d.charIdx) continue;
-      if (Math.abs(item.height - d.height) > 5) continue;
+      // 自己刚掷出的道具在初段飞行期不会击中自己
+      if (item.ownerChar !== undefined && item.ownerChar === d.charIdx && (item.life > 9.5 || item.inactiveFrames > 0)) continue;
+      if (Math.abs(item.height - d.height) > 8) continue;
       const dx = (item.position.x - d.position.x) * 128;
       const dy = (item.position.y - d.position.y) * 128;
-      // reach en unidades de baldosas (kart ~0.65 + item ~0.55 ≈ 1.2 baldosas)
-      const reach = Math.max(1.2, (item.hitboxRadius || 1.0) + 0.3);
+      // reach en unidades de baldosas (kart ~0.8 + item ~0.8 ≈ 1.8 baldosas)
+      const reach = Math.max(1.8, (item.hitboxRadius || 1.2) + 0.6);
       if (dx * dx + dy * dy > reach * reach) continue;
       if (d.isImmune()) { item.used = true; race.addSparkles(item.position); break; }
       d.applyHit();
+      Sound.play('sfx_hit');
       // 气球对战：道具命中计攻击者得分（击破一个气球）
       if (race.isBattle && item.ownerChar !== undefined && item.ownerChar !== d.charIdx &&
           d.wasBalloonHit) {
-        race.drivers[item.ownerChar].hitsDealt++;
+        if (race.drivers[item.ownerChar]) race.drivers[item.ownerChar].hitsDealt++;
         d.wasBalloonHit = false;
       }
       item.used = true;

@@ -220,7 +220,7 @@ const M7 = {
     const sin = (fwdX * relY - fwdY * relX) / relMod;
     const y = this.CLIP_FAR * cosFov / (relMod * cos);
     const x = (sin + sinFov) / (2 * sinFov);
-    return { x, y, z, ok: x >= -0.1 && x < 1.1 && y >= 0 && y <= 2.0 };
+    return { x, y, z, ok: x >= -0.2 && x <= 1.2 && y >= 0 && y <= 2.2 && z > 0.001 };
   },
 
   /* 精灵缩放（忠实移植 1/(3.6*ln(1.02+0.8z))） */

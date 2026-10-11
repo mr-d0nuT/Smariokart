@@ -96,10 +96,12 @@ class Animator {
 
   /* 对手车视角帧（移植 setViewSprite：相对角->32向查表） */
   viewFrame(relAngle) {
+    if (this.state === 'hit') {
+      this.hitPos = (this.hitPos + 1) % 32;
+      return { frame: HIT_TEX_IDX[this.hitPos], mirror: this.hitPos > 16 };
+    }
     let a = relAngle % (2 * Math.PI);
     if (a < 0) a += 2 * Math.PI;
-    if (this.state === 'hit')
-      return { frame: HIT_TEX_IDX[this.hitPos], mirror: this.hitPos > 16 };
     // 32向查表：i∈[1,32]，避免越界
     for (let i = 1; i <= 32; i++) {
       const limit = i === 32 ? Infinity : ((i - 0.5) * 2 * Math.PI) / 32;
@@ -113,6 +115,7 @@ class Animator {
     if (this.starTime > 0) this.starTime -= dt;
     if (this.smallTime > 0) this.smallTime -= dt;
     if (this.smashTime > 0) this.smashTime -= dt;
+    if (this.state === 'hit') this.hitPos = (this.hitPos + Math.max(1, Math.round(dt * 60))) % 32;
     if (this.state === 'fall') this.fallScale *= 0.92;
     // 行驶颠簸: vibración natural suave de motor
     this.bobTime += dt * (3 + speedForward * 14);

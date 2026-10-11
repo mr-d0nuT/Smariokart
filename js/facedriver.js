@@ -119,28 +119,28 @@ const FaceDriver = (() => {
       }
       // 4. Si son vistas frontales (8 a 11):
       else {
-        // Encarando a la cámara: aquí va el selfie frontal ampliado (Modo Cabezón Arcade)
-        let cx = 64, cy = 54, fw = 76, fh = 68;
-        if (f === 11) { cx = 64; cy = 54; fw = 76; fh = 68; } // Frontal directo
-        else if (f === 10) { cx = 66; cy = 54; fw = 74; fh = 68; }
-        else if (f === 9) { cx = 68; cy = 54; fw = 72; fh = 68; }
-        else if (f === 8) { cx = 70; cy = 54; fw = 70; fh = 68; }
+        // Encarando a la cámara: cara tan ancha como la cabeza completa del personaje (Modo Cabezón Arcade)
+        let cx = 64, cy = 58, fw = 100, fh = 78;
+        if (f === 11) { cx = 64; cy = 58; fw = 100; fh = 78; } // Frontal directo: de oreja a oreja
+        else if (f === 10) { cx = 66; cy = 58; fw = 98; fh = 78; }
+        else if (f === 9) { cx = 68; cy = 58; fw = 96; fh = 78; }
+        else if (f === 8) { cx = 70; cy = 58; fw = 94; fh = 78; }
 
-        // Borrar el rostro original del personaje para que no se superponga por debajo
-        fctx.clearRect(28, 32, 72, 48);
+        // Borrar completamente todo el rostro, ojos, nariz y orejas originales del personaje
+        fctx.clearRect(12, 34, 104, 50);
 
-        // Dibujar el selfie con recorte suave en el óvalo de la cara
+        // Dibujar el selfie ocupando todo el ancho de la cabeza
         fctx.save();
         fctx.imageSmoothingEnabled = true;
         fctx.imageSmoothingQuality = 'high';
         fctx.beginPath();
-        fctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+        fctx.ellipse(cx, cy, fw * 0.49, fh * 0.48, 0, 0, Math.PI * 2);
         fctx.clip();
         fctx.drawImage(userFaceCanvas, cx - fw / 2, cy - fh / 2, fw, fh);
         fctx.restore();
 
         // REDIBUJAR LA GORRA AUTÉNTICA DE NINTENDO (filas 0 a 11) DIRECTAMENTE ENCIMA
-        // Esto coloca la visera real y el emblema de Nintendo en la frente del jugador
+        // La visera real y el emblema descansan perfectamente sobre la frente del jugador
         fctx.imageSmoothingEnabled = false;
         fctx.drawImage(origSlice, 0, 0, 32, 11, 0, 0, 128, 44);
 
@@ -181,13 +181,13 @@ const FaceDriver = (() => {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(origSlice, 0, 0, 32, 32, 4, 4, 40, 40);
 
-    // Borrar cara original
-    ctx.clearRect(10, 14, 28, 20);
+    // Borrar cara original completa (de oreja a oreja)
+    ctx.clearRect(6, 12, 36, 24);
 
-    // Integrar el selfie en el área de la cara
+    // Integrar el selfie en el área completa de la cara
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(userFaceCanvas, 10, 14, 28, 24);
+    ctx.drawImage(userFaceCanvas, 6, 12, 36, 24);
 
     // Gorra auténtica de Nintendo por encima
     ctx.imageSmoothingEnabled = false;
@@ -223,13 +223,13 @@ const FaceDriver = (() => {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(origSlice, 0, 0, 32, 32, 12, 12, 104, 104);
 
-    // Borrar cara original
-    ctx.clearRect(28, 34, 72, 48);
+    // Borrar cara original completa (de oreja a oreja)
+    ctx.clearRect(16, 32, 96, 52);
 
-    // Integrar la cara con el recorte oval suave
+    // Integrar la cara con el recorte oval suave ocupando todo el ancho
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(userFaceCanvas, 28, 34, 72, 64);
+    ctx.drawImage(userFaceCanvas, 16, 32, 96, 56);
 
     // Gorra auténtica de Nintendo por encima
     ctx.imageSmoothingEnabled = false;
