@@ -120,6 +120,7 @@ const Sound = {
         const a = new Audio(this.sfxPath(name));
         a.volume = finalVol * 0.6;
         a.playbackRate = rate;
+        a.loop = !!loop;
         const p = a.play();
         if (p && p.catch) p.catch(err => {
           if (err && err.name === 'NotAllowedError' && !this._retryTimers['sfx:' + name]) {
@@ -130,7 +131,22 @@ const Sound = {
             }, 700);
           }
         });
-        return { src: { stop() { a.pause(); } }, g: { get gain() { return { get value() { return a.volume; }, set value(v) { a.volume = v; } }; } } };
+        return {
+          src: {
+            stop() {
+              a.pause();
+              try { a.currentTime = 0; } catch (e) {}
+            }
+          },
+          g: {
+            get gain() {
+              return {
+                get value() { return a.volume; },
+                set value(v) { a.volume = v; }
+              };
+            }
+          }
+        };
       } catch (e) {
         return null;
       }

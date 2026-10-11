@@ -128,7 +128,11 @@ class Driver {
   pushState(st, endTime) { this.state |= st; this.stateEnd[Math.log2(st) | 0] = endTime; }
   popState(st) {
     if (st & DS.STAR) {
-      if (this._starSound) { Sound.stop(this._starSound); this._starSound = null; }
+      if (this._starSound) {
+        Sound.stop(this._starSound);
+        this._starSound = null;
+        if (Sound.musicGain && Sound.musicGain.gain) Sound.musicGain.gain.value = 0.55;
+      }
     }
     this.state &= ~st;
     this.stateEnd[Math.log2(st) | 0] = 0;
@@ -152,7 +156,8 @@ class Driver {
     this.animator.starTime = DUR.STAR;
     if (this.isRealPlayer) {
       if (this._starSound) Sound.stop(this._starSound);
-      this._starSound = Sound.play('sfx_star', { loop: true, volume: 0.65 });
+      this._starSound = Sound.play('sfx_star', { loop: true, volume: 0.9 });
+      if (Sound.musicGain && Sound.musicGain.gain) Sound.musicGain.gain.value = 0.15;
     }
   }
   applyThunder(duration) {
@@ -192,7 +197,10 @@ class Driver {
       this.addCoin(-2);
       this.popState(DS.SPEED_UP); this.popState(DS.MORE_SPEED_UP);
       this.speedTurn = 0;
-      this.speedForward = Math.min(this.speedForward, this.vehicle.maxNormalLinearSpeed * 0.25);
+      this.speedForward = 0;
+      this.collisionMomentum.x = 0; this.collisionMomentum.y = 0;
+      this.vectorialSpeed.x = 0; this.vectorialSpeed.y = 0;
+      this.lateralSlip = 0;
       Sound.play('sfx_hit');
       this.animator.hit();
       this.pushState(DS.UNCONTROLLED, GameClock.now() + DUR.UNCONTROLLED);
@@ -203,6 +211,9 @@ class Driver {
     if (this.isImmune() || this.has(DS.SHIELD)) return;   // 星星/对战无敌免砸
     this.addCoin(-3);
     this.speedTurn = 0; this.speedForward = 0;
+    this.collisionMomentum.x = 0; this.collisionMomentum.y = 0;
+    this.vectorialSpeed.x = 0; this.vectorialSpeed.y = 0;
+    this.lateralSlip = 0;
     this.animator.smashTime = 1.2;                        // 此前误用11秒压扁变形
     if (this.isRealPlayer && nowS - (this._lastThud || -9) > 0.4) {
       Sound.play('sfx_thud');                             // 防止连续帧刷刺耳噪声
@@ -605,8 +616,13 @@ class Driver {
 
     if (this.has(DS.UNCONTROLLED)) {
       this.animator.hit();
-      this.speedForward *= Math.exp(-6.0 * dt);
+      this.speedForward = 0;
       this.speedTurn = 0;
+      this.collisionMomentum.x = 0;
+      this.collisionMomentum.y = 0;
+      this.vectorialSpeed.x = 0;
+      this.vectorialSpeed.y = 0;
+      this.lateralSlip = 0;
     } else if (!this.has(DS.STOPPED)) {
       if (this.controlType === 'player') accel = this.playerControls(accel, input, now);
       else {
@@ -904,6 +920,11 @@ class Driver {
     this.collisionMomentum = { x: 0, y: 0 }; this.vectorialSpeed = { x: 0, y: 0 };
     this.state = 0; this.falling = false; this.finished = false;
     this.onLakitu = 0;
+    if (this._starSound) {
+      Sound.stop(this._starSound);
+      this._starSound = null;
+      if (Sound.musicGain && Sound.musicGain.gain) Sound.musicGain.gain.value = 0.55;
+    }
     this.animator.reset();
   }
 }

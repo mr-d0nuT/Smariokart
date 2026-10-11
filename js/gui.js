@@ -107,6 +107,10 @@ const Gui = {
   reset() {
     this.time = 0; this.coins = 0; this.rank = 1;
     this.itemIcon = 0; this.roulette = { active: false, t: 0, finalItem: 0 };
+    if (this._reelSound) {
+      Sound.stop(this._reelSound);
+      this._reelSound = null;
+    }
     this.lapMsg = null; this.wrongDir = false;
     this.wrongAlarmTimer = 0;
   },
@@ -114,6 +118,11 @@ const Gui = {
     if (!this.roulette.active) this.itemIcon = pu;
   },
   startRoulette(finalItem) {
+    if (this._reelSound) {
+      Sound.stop(this._reelSound);
+      this._reelSound = null;
+    }
+    this._reelSound = Sound.play('sfx_itemreel', { loop: true });
     this.roulette = { active: true, t: 2.0, finalItem };
   },
   showLap(lap) {
@@ -126,6 +135,10 @@ const Gui = {
       this.roulette.t -= dt;
       if (this.roulette.t <= 0) {
         this.roulette.active = false;
+        if (this._reelSound) {
+          Sound.stop(this._reelSound);
+          this._reelSound = null;
+        }
         this.itemIcon = this.roulette.finalItem;
         Sound.play('sfx_item');
       }

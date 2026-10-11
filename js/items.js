@@ -316,7 +316,6 @@ function interactFloorObjects(driver, race) {
       GameMap.markCourseDirty();
       if (driver.isRealPlayer) {
         Gui.startRoulette(driver.powerUp);
-        Sound.play('sfx_itemreel');
       }
     }
     break;

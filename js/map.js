@@ -297,6 +297,9 @@ const GameMap = {
    * 落在路肩/坠落区。增加吸附：出生点不在可行驶地块时，螺旋搜索
    * 最近的可行驶(TRACK/OTHER)格。 */
   getPlayerInitialPosition(position) {
+    const drivable = v => v === Land.TRACK || v === Land.OTHER || v === Land.SLOW ||
+                          v === Land.RAMP_H || v === Land.RAMP_V;
+
     // 程序化赛道的起跑直线可旋转且会弯曲，不能套用资产赛道固定 y 方向的排位公式。
     // 沿中心线从终点反向量出纵向间距，再沿局部法线错开左右车位。
     if (this._startPath && this._startPath.length > 1) {
@@ -323,49 +326,39 @@ const GameMap = {
         bx = a.x; by = a.y;
       }
 
-      const lane = position % 2 ? 16 : -16;
-      const px = bx - Math.sin(angle) * lane;
-      const py = by + Math.cos(angle) * lane;
+      let lane = position % 2 ? 14 : -14;
+      let px = bx - Math.sin(angle) * lane;
+      let py = by + Math.cos(angle) * lane;
+
+      // 若弯道处法向外侧超出路肩，沿法向向中心线(bx, by)收缩车道，绝不错乱发车行次
+      for (let s = 0; s < 6; s++) {
+        const tx = Math.floor(px / 8), ty = Math.floor(py / 8);
+        const l = (tx >= 0 && tx < 128 && ty >= 0 && ty < 128) ? this.land[ty * 128 + tx] : Land.OUTER;
+        if (drivable(l)) break;
+        lane *= 0.65;
+        px = bx - Math.sin(angle) * lane;
+        py = by + Math.cos(angle) * lane;
+      }
+
       return { x: px / 1024, y: py / 1024, angle };
     }
 
     const gx = (this.centeredGoal.x + this.centeredGoal.w / 2) * 1024;
     const gy = (this.centeredGoal.y + this.centeredGoal.h) * 1024;
-    const dx = gx < 512 ? 16 * (2 * (position % 2) - 1) : 16 * (1 - 2 * (position % 2));
+    let dx = gx < 512 ? 16 * (2 * (position % 2) - 1) : 16 * (1 - 2 * (position % 2));
     const dy = 28 + 24 * (position - 1);
     let px = Math.floor((gx + dx) / 8) * 8 / 1024;
     let py = (gy + dy) / 1024;
-    // 吸附检查
-    const drivable = v => v === Land.TRACK || v === Land.OTHER || v === Land.SLOW ||
-                          v === Land.RAMP_H || v === Land.RAMP_V;
-    const okSpot = (tx, ty) => {
-      if (!drivable(this.land[ty * 128 + tx])) return false;
-      return drivable(this.land[ty * 128 + tx - 1]) && drivable(this.land[ty * 128 + tx + 1]) &&
-             drivable(this.land[(ty - 1) * 128 + tx]) && drivable(this.land[(ty + 1) * 128 + tx]);
-    };
-    const cx0 = Math.floor(px * 128), cy0 = Math.floor(py * 128);
-    if (!okSpot(cx0, cy0)) {
-      const cx = Math.round(px * 128), cy = Math.round(py * 128);
-      let best = null, bestD = Infinity;
-      for (let r = 1; r <= 14 && !best; r++) {
-        for (let oy = -r; oy <= r && !best; oy++) {
-          for (let ox = -r; ox <= r && !best; ox++) {
-            if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;   // 只看环上
-            const tx = cx + ox, ty = cy + oy;
-            if (tx < 3 || tx > 124 || ty < 3 || ty > 124) continue;
-            // 候选格及其四邻都必须可行驶（远离OUTER边界，防出生即坠）
-            const ok = drivable(this.land[ty * 128 + tx]) &&
-              drivable(this.land[ty * 128 + tx - 1]) && drivable(this.land[ty * 128 + tx + 1]) &&
-              drivable(this.land[(ty - 1) * 128 + tx]) && drivable(this.land[(ty + 1) * 128 + tx]);
-            if (ok) {
-              const d2 = ox * ox + oy * oy;
-              if (d2 < bestD) { bestD = d2; best = [tx, ty]; }
-            }
-          }
-        }
-      }
-      if (best) { px = (best[0] + 0.5) / 128; py = (best[1] + 0.5) / 128; }
+
+    // 经典资产赛道：严格保持各自纵向行次(dy)，若边缘紧贴草地则水平向中心(gx)轻微内收
+    for (let s = 0; s < 6; s++) {
+      const tx = Math.floor(px * 128), ty = Math.floor(py * 128);
+      const l = (tx >= 0 && tx < 128 && ty >= 0 && ty < 128) ? this.land[ty * 128 + tx] : Land.OUTER;
+      if (drivable(l)) break;
+      dx *= 0.65;
+      px = Math.floor((gx + dx) / 8) * 8 / 1024;
     }
+
     return { x: px, y: py, angle: -Math.PI / 2 };
   }
 };

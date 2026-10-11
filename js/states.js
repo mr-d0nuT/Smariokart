@@ -418,14 +418,19 @@ class Race {
                               CC_MULT[this.ccIndex] * (isPlayer ? PCM : 1));
       this.drivers.push(d);
     }
-    // 发车排位：玩家固定末位，AI随机
-    const order = [...Array(8).keys()];
-    const aiSlots = order.filter(i => i !== this.playerChar);
-    for (let i = aiSlots.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
-      [aiSlots[i], aiSlots[j]] = [aiSlots[j], aiSlots[i]];
+    // 发车排位：GP后续比赛按上场名次，首场/常规赛玩家第8位发车追赶
+    let slots;
+    if (typeof Game !== 'undefined' && Game.gp && Game.gp.lastRanking && Game.gp.raceIdx > 0) {
+      slots = [...Game.gp.lastRanking];
+    } else {
+      const order = [...Array(8).keys()];
+      const aiSlots = order.filter(i => i !== this.playerChar);
+      for (let i = aiSlots.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        [aiSlots[i], aiSlots[j]] = [aiSlots[j], aiSlots[i]];
+      }
+      slots = [...aiSlots, this.playerChar];   // 玩家第8位发车
     }
-    const slots = [...aiSlots, this.playerChar];   // 玩家第8位发车
     if (this.isBattle) {
       // 对战出生：8辆绕场心椭圆均匀分布朝向圆心，开局全体2秒无敌
       let ax0 = 128, ay0 = 128, ax1 = 0, ay1 = 0;
@@ -543,21 +548,15 @@ class Race {
         const nx = dx / dist; // a 指向 b 的单位法向量
         const ny = dy / dist;
 
-        // 星星无敌碰撞判定
+        // 星星无敌碰撞判定（受击者原地打转，不被击飞甩出赛道）
         if (a.isImmune() && !b.isImmune()) {
           b.applyHit();
-          b.collisionMomentum.x += nx * 0.08;
-          b.collisionMomentum.y += ny * 0.08;
-          b.speedForward *= 0.3;
           this.addSparkles(b.position);
           if (a.isRealPlayer || b.isRealPlayer) Sound.play('sfx_hit');
           continue;
         }
         if (b.isImmune() && !a.isImmune()) {
           a.applyHit();
-          a.collisionMomentum.x -= nx * 0.08;
-          a.collisionMomentum.y -= ny * 0.08;
-          a.speedForward *= 0.3;
           this.addSparkles(a.position);
           if (a.isRealPlayer || b.isRealPlayer) Sound.play('sfx_hit');
           continue;
@@ -621,7 +620,7 @@ class Race {
           d.vectorialSpeed.y += dy / m * 0.09;
           d.applySmash();
         } else {
-          // 管道：实体碰撞（半径 2.2 格，约 18 像素）
+          // 管道：实体碰撞障碍物（像墙壁一样弹性反弹，绝不打转旋转）
           const pipeRadius = 2.2;
           const dist = Math.hypot(dx, dy);
           if (dist > pipeRadius) continue;
@@ -632,16 +631,17 @@ class Race {
           const overlap = pipeRadius - dist;
           d.position.x += nx * (overlap / 128);
           d.position.y += ny * (overlap / 128);
-          // Impulso elástico y frenazo contundente
-          d.collisionMomentum.x += nx * 0.08;
-          d.collisionMomentum.y += ny * 0.08;
-          d.speedForward *= 0.25;
+          // Impulso elástico de rebote sólido contra pared
+          d.collisionMomentum.x += nx * 0.09;
+          d.collisionMomentum.y += ny * 0.09;
+          d.speedForward = Math.min(d.speedForward * 0.2, 0.02);
+          d.popState(DS.SPEED_UP);
+          d.popState(DS.MORE_SPEED_UP);
 
           if (!d._pipeCd) d._pipeCd = {};
           if (nowW >= (d._pipeCd[wi] || 0)) {
-            d._pipeCd[wi] = nowW + 0.8;
+            d._pipeCd[wi] = nowW + 0.6;
             Sound.play('sfx_thudpipe');
-            d.applyHit();
             d.addCoin(-1);
           }
         }
