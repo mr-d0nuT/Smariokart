@@ -36,6 +36,11 @@ const SelfieSetup = (() => {
   let liveTimer = 0;
   let animTime = 0;
   let onDoneCallback = null;
+  let _lastFace = null;
+  let _lastBack = null;
+  let _lastChar = -1;
+  let previewAnim = null;
+  let previewAnimChar = -1;
 
   function getCurrentCrop() {
     return photoMode === 'front' ? cropFront : cropBack;
@@ -526,9 +531,13 @@ const SelfieSetup = (() => {
   }
 
   function updatePilotFrames() {
+    _lastFace = null;
     if (currentFace) {
       const name = nameInput && nameInput.value.trim() ? nameInput.value.trim() : CHARACTERS[selectedChar].name;
       FaceDriver.setFace(currentFace, currentBack, selectedChar, name, false);
+      if (previewAnim) {
+        FaceDriver.applyToAnimator(previewAnim, selectedChar);
+      }
     }
   }
 
@@ -627,6 +636,7 @@ const SelfieSetup = (() => {
     counting = false;
     liveView = true; // Volver a la cámara en vivo limpia
     if (countdownEl) countdownEl.textContent = '';
+    _lastFace = null;
     if (photoMode === 'front') {
       currentFace = null;
       rawFrontCanvas = null;
@@ -654,6 +664,11 @@ const SelfieSetup = (() => {
     currentBack = null;
     rawFrontCanvas = null;
     rawBackCanvas = null;
+    _lastFace = null;
+    _lastBack = null;
+    _lastChar = -1;
+    previewAnim = null;
+    previewAnimChar = -1;
     cropFront = { cx: 0.5, cy: 0.5, zoom: 1.0, isContour: false };
     cropBack = { cx: 0.5, cy: 0.62, zoom: 1.35 };
     if (shot) {
@@ -761,36 +776,47 @@ const SelfieSetup = (() => {
 
     // Obtener sprite del kart en este ángulo
     const ch = CHARACTERS[selectedChar];
-    const anim = new Animator(ch.file.replace('drivers/', ''));
-
-    // Si hay fotos listas, generar frames con cabeza grande en alta definición
-    const faceToUse = currentFace || liveFace;
-    if (faceToUse) {
-      if (SelfieSetup._lastFace !== faceToUse || SelfieSetup._lastBack !== currentBack || SelfieSetup._lastChar !== selectedChar) {
-        SelfieSetup._lastFace = faceToUse;
-        SelfieSetup._lastBack = currentBack;
-        SelfieSetup._lastChar = selectedChar;
-        FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
-      }
-      FaceDriver.applyToAnimator(anim, selectedChar);
+    if (!previewAnim || previewAnimChar !== selectedChar) {
+      previewAnimChar = selectedChar;
+      previewAnim = new Animator(ch.file.replace('drivers/', ''));
+      _lastFace = null;
     }
 
-    const mf = anim.minimapFrame(angle);
-    const sprite = anim.driving[mf.frame];
+    // Si hay fotos listas (capturada o en vivo), aplicar rostro inmediatamente
+    const faceToUse = currentFace || liveFace;
+    if (faceToUse) {
+      if (_lastFace !== faceToUse || _lastBack !== currentBack || _lastChar !== selectedChar) {
+        _lastFace = faceToUse;
+        _lastBack = currentBack;
+        _lastChar = selectedChar;
+        FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
+        FaceDriver.applyToAnimator(previewAnim, selectedChar);
+      }
+    } else if (_lastFace !== null) {
+      _lastFace = null;
+      _lastBack = null;
+      _lastChar = selectedChar;
+      previewAnim = new Animator(ch.file.replace('drivers/', ''));
+    }
 
-    const kartSize = 140; // Tamaño ampliado para lucir la cabeza grande en el preview
-    pctx.save();
-    pctx.imageSmoothingEnabled = true;
-    pctx.imageSmoothingQuality = 'high';
-    pctx.translate(cx, cy);
+    const mf = previewAnim.minimapFrame(angle);
+    const sprite = (previewAnim.driving && previewAnim.driving[mf.frame]) ? previewAnim.driving[mf.frame] : null;
 
-    // Pequeño bamboleo de motor
-    const bob = Math.sin(animTime * 18) * 1.5;
-    pctx.translate(0, bob);
+    if (sprite) {
+      const kartSize = 140; // Tamaño ampliado para lucir la cabeza grande en el preview
+      pctx.save();
+      pctx.imageSmoothingEnabled = true;
+      pctx.imageSmoothingQuality = 'high';
+      pctx.translate(cx, cy);
 
-    if (mf.mirror) pctx.scale(-1, 1);
-    pctx.drawImage(sprite, -kartSize / 2, -kartSize + 22, kartSize, kartSize);
-    pctx.restore();
+      // Pequeño bamboleo de motor
+      const bob = Math.sin(animTime * 18) * 1.5;
+      pctx.translate(0, bob);
+
+      if (mf.mirror) pctx.scale(-1, 1);
+      pctx.drawImage(sprite, -kartSize / 2, -kartSize + 22, kartSize, kartSize);
+      pctx.restore();
+    }
 
     // Texto de nombre del piloto y personaje
     pctx.fillStyle = '#ffe060';
@@ -810,11 +836,14 @@ const SelfieSetup = (() => {
     FaceDriver.setWearHeadgear(!current);
     updateHeadgearButton();
     // Forzar reconstrucción de fotogramas del preview
-    SelfieSetup._lastFace = null;
+    _lastFace = null;
     const ch = CHARACTERS[selectedChar];
     const faceToUse = currentFace || liveFace;
     if (faceToUse) {
       FaceDriver.setFace(faceToUse, currentBack, selectedChar, ch.name, false);
+      if (previewAnim) {
+        FaceDriver.applyToAnimator(previewAnim, selectedChar);
+      }
     }
   }
 
@@ -832,7 +861,11 @@ const SelfieSetup = (() => {
     close,
     switchMode,
     toggleHeadgear,
+    drawKartPreview,
+    saveAndClose,
+    selectChar: (idx) => { selectedChar = idx; updatePilotFrames(); buildCharCards(); },
     get currentFace() { return currentFace; },
-    get currentBack() { return currentBack; }
+    get currentBack() { return currentBack; },
+    get selectedChar() { return selectedChar; }
   };
 })();

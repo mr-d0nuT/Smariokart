@@ -699,7 +699,9 @@ class Race {
   }
 
   draw(ctx, camDriver, showPlayerKart = true) {
-    const modAngle = normAngle(camDriver.posAngle);
+    if (!camDriver) camDriver = this.player;
+    if (!camDriver) return;
+    const modAngle = normAngle(camDriver.posAngle || 0);
     View.drawSky(ctx, modAngle);
     const camPos = {
       x: camDriver.position.x - Math.cos(camDriver.posAngle) * (M7.CAM_2_PLAYER_DST / 1024),
@@ -1243,8 +1245,16 @@ class RaceStartState {
     this.phase = race.isBattle ? 'lights' : 'anim';   // 对战跳过镜头飞行
     this.lightTimer = 0;
     this.started = false;
+    const d = new Driver(1, 'none', this.ccSafe(), false);
+    d.vehicle = makeVehicle(0.15, 0.13, 0.10175, 1.0, false, CC_MULT[Game.ccIndex || 0]);
+    this.pseudo = d;
   }
   init() {
+    if (!this.pseudo) {
+      const d = new Driver(1, 'none', this.ccSafe(), false);
+      d.vehicle = makeVehicle(0.15, 0.13, 0.10175, 1.0, false, CC_MULT[Game.ccIndex || 0]);
+      this.pseudo = d;
+    }
     if (!this.race.isBattle) Sound.playMusic('music_opening');
     Sound.startEngine();
   }
@@ -1332,7 +1342,7 @@ class RaceStartState {
         if (this.accTime >= 2.35) {
           p.applyHit();                                 // 全程死按油门：过热熄火
         } else if (this.accTime > 0.05) {
-          p.speedForward = Math.max(this.pseudo.speedForward,
+          p.speedForward = Math.max(this.pseudo ? this.pseudo.speedForward : 0,
             p.vehicle.maxNormalLinearSpeed * 0.55);     // 火箭起步
           Sound.play('sfx_boost');
         } else {
@@ -1364,7 +1374,8 @@ class RaceStartState {
   }
   ccSafe() { return Game.ccIndex; }
   draw(ctx) {
-    const cam = this.phase === 'anim' ? this.pseudo : this.race.player;
+    const cam = (this.phase === 'anim' && this.pseudo) ? this.pseudo : this.race.player;
+    if (!cam) return;
     // Bug6修复：开场镜头阶段不画屏幕中央固定的玩家卡丁车
     // （对应C++ racestart.cpp::draw 只画 getDriverDrawables，不调 player->getDrawables）
     this.race.draw(ctx, cam, this.phase !== 'anim');

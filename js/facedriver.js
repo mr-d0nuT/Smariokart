@@ -18,6 +18,7 @@ const FaceDriver = (() => {
   let charIdx = 0;               // 0 = Mario
   const customDriving = {};      // charIdx -> Array de 12 Canvas (256x256 alta definición)
   let podiumFace = null;         // Canvas 256x256 alta definición
+  let minimapIcon = null;        // Canvas 64x64 alta definición
   let _lastFaceToken = null;
   let wearHeadgear = true;
   try {
@@ -800,12 +801,13 @@ const FaceDriver = (() => {
 
   /* Aplica los cuadros personalizados a un objeto Animator existente */
   function applyToAnimator(animator, characterIndex) {
-    if (!active) return;
-    if (!customDriving[characterIndex]) {
-      customDriving[characterIndex] = buildDrivingFrames(characterIndex);
+    if (!active || !animator) return;
+    const cIdx = (typeof characterIndex === 'number' && characterIndex >= 0) ? characterIndex : charIdx;
+    if (!customDriving[cIdx] || !Array.isArray(customDriving[cIdx]) || customDriving[cIdx].length !== 12) {
+      customDriving[cIdx] = buildDrivingFrames(cIdx);
     }
-    if (customDriving[characterIndex]) {
-      animator.driving = customDriving[characterIndex];
+    if (Array.isArray(customDriving[cIdx]) && customDriving[cIdx].length === 12) {
+      animator.driving = customDriving[cIdx];
       animator.hasCustomFace = true;
     }
   }
